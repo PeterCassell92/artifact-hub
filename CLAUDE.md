@@ -16,6 +16,10 @@ backend (Express) serves both `/api/*` and `/mcp` over a shared `core` domain la
 ## Core principles (don't violate these)
 
 - **No anonymous access** — every viewer is authenticated. See [03](docs/architecture/03-authorization-and-access-control.md).
+- **Passwordless auth (magic link)** — all users incl. admins sign in via emailed magic link; no
+  passwords, no password reset. See [02](docs/architecture/02-auth-identity-and-admin.md).
+- **Publishing is MCP-only** — there is **no upload/publish screen in the SPA**. Users publish via
+  their agent (`publish_artifact`); the frontend is for consuming/managing. See [frontend/](docs/frontend/).
 - **One owner-controlled access policy per artifact**, re-evaluated on every request → revocation
   is instant; **share links are pure locators**, never bearer tokens of access.
 - **The backend makes no LLM calls** — all logic is deterministic. Review summaries are an MCP
@@ -24,13 +28,20 @@ backend (Express) serves both `/api/*` and `/mcp` over a shared `core` domain la
   `artifact://<id>` **Resource**; presigned S3 URLs are confined to the browser/download path.
 - **Group membership is admin-assigned and immutable to the user** — there is no self-service
   group-change route.
+- **Every artifact access is audited** — an `AccessEvent` is written on view/download via the UI,
+  a share link, or an MCP agent (allowed and denied). See [models/access-event.md](docs/models/access-event.md).
 
 ## Tech stack
 
-- **Package manager:** yarn (workspaces). **Monorepo.**
+- **Package manager:** yarn (workspaces). **Monorepo.** Both frontend and backend use
+  **`nodeLinker: node-modules`** (set in root `.yarnrc.yml`), **not** Plug'n'Play (PnP) — so a
+  real `node_modules/` tree is installed, which keeps Prisma, Jest/Testcontainers, bundlers, and
+  editor tooling working without PnP loader shims. `node_modules/` is git-ignored (see `.gitignore`).
 - **Backend:** Node + TypeScript, **Express**, zod validation, **Prisma** (Postgres), MCP TS SDK
   (Streamable HTTP).
-- **Frontend:** React SPA (admin + gallery + artifact detail).
+- **Frontend:** React SPA (admin + gallery + artifact detail) — **Redux Toolkit** for state,
+  **Tailwind** for styling, modular well-tested components. Professional, restrained visuals (no
+  over-design). See [development/frontend-patterns.md](docs/development/frontend-patterns.md).
 - **Shared:** `packages/contracts` — zod schemas + TS types for the API/MCP contract, imported by
   both apps.
 - **Infra:** AWS via Terraform (ECS Fargate + ALB, RDS, S3, CloudFront, SES, Secrets Manager);
@@ -45,9 +56,14 @@ apps/backend      Express + MCP + Prisma + core domain   (own package.json)
 apps/frontend     React SPA                               (own package.json)
 packages/contracts  shared zod schemas + TS types         (own package.json)
 infra/            Terraform
-docs/             architecture docs + BDD user-journeys
+docs/             architecture/ · models/ · frontend/ · user-journeys/ · development/
 package.json      root: private, workspaces + fan-out scripts
 ```
+
+Docs map: [architecture/](docs/architecture/) (decisions, entry point `01`), [models/](docs/models/)
+(field-level domain models — schema source of truth), [frontend/](docs/frontend/) (UX; no publish
+UI), [user-journeys/](docs/user-journeys/) (BDD), [development/](docs/development/) (dev tooling,
+e.g. MailCatcher).
 
 Each app/package has its **own `package.json`**. The **root `package.json`** declares
 `workspaces: ["apps/*", "packages/*"]` and root fan-out scripts.
@@ -92,12 +108,16 @@ Use `yarn workspace <name> <script>` where `<name>` is `backend`, `frontend`, or
 
 ### Typical dev loop
 ```bash
+docker compose up -d                          # Postgres + MailCatcher (email catcher)
 yarn install
 yarn workspace backend db:migrate            # after editing schema.prisma
 yarn workspace backend dev                    # terminal 1: backend
 yarn workspace frontend dev                   # terminal 2: SPA
 yarn test                                     # before pushing
 ```
+
+Emails in dev (invitations / notifications) are caught by **MailCatcher** — read them at
+`http://localhost:1080`. See [development/email-catcher.md](docs/development/email-catcher.md).
 
 ## Migrations
 
@@ -110,6 +130,22 @@ rolling deploys stay safe. Full rules in the **`prisma-migrate`** skill and
 When adding/editing an MCP tool/resource/prompt, follow the **`mcp-tool-descriptions`** skill
 (what / when / when-not / disambiguation / example) so agents pick the right tool. Surface is
 defined in [05](docs/architecture/05-mcp-server-design.md).
+
+## Frontend development patterns
+
+React + **Redux Toolkit** + **Tailwind**, modular well-tested components. Follow the
+**`frontend-patterns`** and **`frontend-component-testing`** skills; full detail in
+[development/frontend-patterns.md](docs/development/frontend-patterns.md).
+
+**Banned anti-patterns (they break testability):**
+- ❌ **`window.alert` / `window.confirm` / `window.prompt`** — live outside the DOM, block the
+  thread; RTL/E2E can't drive them.
+- ❌ **Toasts / auto-dismissing popups** — timer-based dismissal races test assertions → flaky.
+
+**Use instead:** state-driven, **in-DOM notifications** (a notifications slice + a
+`NotificationRegion` with `role="alert"`/`role="status"`, dismissed by the user or a state change,
+**never a timer**); **in-app modals** (`role="dialog"`) for confirmations; **inline** messages for
+form feedback. This keeps every notification a queryable DOM node with no timing dependency.
 
 ## Testing expectations
 

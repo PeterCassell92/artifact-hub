@@ -4,7 +4,14 @@
 
 This is the entry point for the Artifact Hub architecture. It states the problem, the
 system shape, the settled decisions, and a requirements-traceability matrix. Deeper detail
-lives in the sibling documents `02`–`10`.
+lives in the sibling documents `02`–`10` and these companion folders:
+
+- [`../models/`](../models/) — field-level domain models (source of truth for the schema): the
+  rich **artifact metadata catalogue** and the **AccessEvent** audit trail.
+- [`../frontend/`](../frontend/) — frontend UX: dashboard, My Artifacts, Shared With Me, artifact
+  detail, filtering & search (publishing is **not** a frontend feature).
+- [`../user-journeys/`](../user-journeys/) — BDD `.feature` specs.
+- [`../development/`](../development/) — dev tooling (e.g. the MailCatcher email catcher).
 
 ---
 
@@ -39,6 +46,13 @@ It is usable two ways over the same core logic:
    loop is the *client's* (e.g. Claude Desktop).
 6. **Files never pass through an agent's context as tool results.** Agent file delivery is
    via MCP **Resources**; presigned S3 URLs are confined to the browser/download path.
+7. **Authentication is passwordless (magic link).** No passwords anywhere — every human signs in
+   with an emailed magic link. We already run an email service, so we reuse it and avoid all
+   password management.
+8. **Publishing is an MCP-agent function only.** There is no upload/publish screen in the SPA;
+   users publish via their agent (`publish_artifact`). The frontend is for consuming and managing.
+9. **Every artifact access is audited.** View/download via the UI, a share link, or an MCP agent
+   all write an `AccessEvent` (allowed and denied) — a full access trail across all three routes.
 
 ---
 
@@ -107,6 +121,7 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 7 | ORM / migrations | **Prisma** (`migrate dev`/`deploy`/`db seed`) | DECIDED | 04 |
 | 8 | Object storage | S3, private (Block Public Access) | DECIDED | 07 |
 | 9 | Identity provider | Auth0 (OIDC humans + MCP OAuth RS) | DECIDED | 02 |
+| 9b | Human auth method | **Passwordless magic link** (all users incl. admins) | DECIDED | 02 |
 | 10 | Anonymous access | **Not allowed** — all viewers authenticated | DECIDED | 03 |
 | 11 | Access policy scope | **One owner-controlled policy per artifact** | DECIDED | 03 |
 | 12 | Expiry options | 24h / 7d / 30d / never | DECIDED | 03/04 |
@@ -114,6 +129,7 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 14 | Share links | Pure locators (`/s/<token>`), no per-link policy | DECIDED | 03/06 |
 | 15 | Groups | App-managed in Postgres, admin-assigned, immutable | DECIDED | 02/04 |
 | 16 | Admin area | `/admin` + `/admin/users`, backend admin routes | DECIDED | 02/06 |
+| 16b | Admin promote/demote | Admins can promote/demote users; last-admin guard | DECIDED | 02/06 |
 | 17 | Email | AWS SES (invitations) | DECIDED | 02/07 |
 | 18 | Initial admins | Seeded from `INITIAL_ADMIN_EMAILS` (idempotent) | DECIDED | 02 |
 | 19 | Comments | Any viewer reads; commenting requires auth | DECIDED | 03/06 |
@@ -121,11 +137,20 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 21 | Presigned URLs | Browser/download path only; ~60s; never in MCP | DECIDED | 03/05 |
 | 22 | Review summary | MCP **Prompt** (client-side LLM), backend LLM-free | DECIDED | 05 |
 | 23 | Artifact relationships | `artifact_relationships` table (additive) | DECIDED | 04 |
-| 24 | Artifact metadata | `metadata` JSONB + structured tags | DECIDED | 04 |
+| 24 | Artifact metadata | Rich faceted metadata + `metadata` JSONB + tags | DECIDED | 04, models/ |
 | 25 | Orchestration | Transactional outbox + idempotency; no LangGraph | DECIDED | 02/07 |
 | 26 | Repo layout | Monorepo (yarn workspaces), path-filtered CI | DECIDED | 08 |
 | 27 | HTML sandboxing | Serve off sandbox origin + strict CSP | DECIDED | 06 |
 | 28 | Authz model | Owner-based | DECIDED | 03 |
+| 29 | Publishing | **MCP-only** — no upload/publish UI in the SPA | DECIDED | 05, frontend/ |
+| 30 | Access auditing | `AccessEvent` per view/download across ui/share_link/mcp | DECIDED | 04, models/ |
+| 31 | Frontend scope | Consume/manage only (My Artifacts, Shared, filters/search) | DECIDED | frontend/ |
+| 32 | Dev email | MailCatcher (Docker) in dev; SES in prod | DECIDED | development/ |
+| 33 | Frontend stack | React + Redux Toolkit + Tailwind; modular tested components | DECIDED | development/, 09 |
+| 34 | Notification pattern | **No `window.alert`/`confirm`/`prompt`, no toasts**; in-DOM state-driven | DECIDED | development/ |
+| 35 | MCP auth flow | OAuth 2.1 (PRM + DCR + PKCE + resource indicator); magic link in popup | DECIDED | 02 §1.1 |
+| 36 | MCP token rules | Deny-if-not-provisioned, audience-bound, identity-only, disabled-blocked | DECIDED | 02 §1.1 |
+| 37 | Admin over MCP | **Not allowed** — no admin MCP tools; `/api/admin/*` rejects MCP tokens | DECIDED | 02/05/06 |
 
 Items that were **OPEN** in the WIP doc (backend host, frontend host, authz model, HTML
 sandboxing) are now all closed above.
@@ -159,8 +184,10 @@ Every requirement maps to at least one design doc **and** one BDD scenario. No o
 | Per-artifact, owner-only, revocable policy | 03, 04 | publisher-revoke-and-my-artifacts, access-denied-after-expiry |
 | Expiry buckets (24h/7d/30d/never) | 03, 04, 05 | publisher-publish-with-policy |
 | Audience: public / specific_users / user_groups | 03, 04 | publisher-publish-with-policy, reviewer-access-via-ui |
+| Passwordless magic-link auth (all users) | 02 | reviewer-access-via-ui, admin-invite-user |
 | Groups (app-managed, immutable) | 02, 04 | admin-invite-user |
 | Admin area + email invites | 02, 06, 07 | admin-invite-user |
+| Admin promote/demote users | 02, 06 | admin-promote-user |
 | Multiple seeded initial admins | 02 | admin-invite-user (bootstrap note) |
 | Comments: any viewer reads, auth to write, shows body/author/date | 03, 06 | reviewer-access-via-ui, publisher-revoke-and-my-artifacts |
 | "My Artifacts" survives expiry for owner | 03, 06 | publisher-revoke-and-my-artifacts |
@@ -168,8 +195,12 @@ Every requirement maps to at least one design doc **and** one BDD scenario. No o
 | Download via MCP Resource, never a tool result | 05 | reviewer-access-via-mcp |
 | Download via frontend (presigned) | 03, 06 | reviewer-access-via-ui |
 | Review summary for Claude Desktop | 05 | reviewer-access-via-mcp |
-| Artifact relationships | 04 | (storage + read API; no v1 UI journey) |
-| Artifact metadata | 04, 05, 06 | publisher-publish-with-policy |
+| Publishing is MCP-only (no UI publish) | 05, 06, frontend/ | publisher-publish-with-policy |
+| Frontend: My Artifacts / Shared With Me / filters & search | frontend/ | reviewer-access-via-ui |
+| Access audit trail (ui / share_link / mcp) | 04, models/access-event | reviewer-access-via-ui, reviewer-access-via-mcp |
+| Artifact relationships | 04, models/ | (storage + read API; no v1 UI journey) |
+| Rich artifact metadata (drives filters) | 04, 05, 06, models/artifact | publisher-publish-with-policy |
+| Dev email catcher (MailCatcher) | development/email-catcher | (dev tooling) |
 | High concurrency | 07 | (non-functional; load-tested, see 09) |
 | Cost optimisation at scale (S3 lifecycle) | 07 | (non-functional) |
 | Observability | 10 | (non-functional) |

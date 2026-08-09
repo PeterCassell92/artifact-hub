@@ -73,6 +73,11 @@ Pure functions in `core`, no I/O, exhaustive:
 ## 5. React component unit tests — frontend (`*.test.tsx`)
 
 - **Jest + React Testing Library** (with `jsdom`), testing components in isolation.
+- Render wrapped in the **Redux `<Provider>`** (a test store) + router; query by role/label/text.
+- **Notifications/confirmations are asserted as in-DOM nodes** (`role="alert"`/`status"`/`dialog"`).
+  Tests must **not** rely on `window.alert/confirm/prompt` or toast timing — those are banned in the
+  UI (see [`../development/frontend-patterns.md`](../development/frontend-patterns.md) and the
+  `frontend-component-testing` skill), which is exactly what makes these tests deterministic.
 - Naming: co-locate as `<Component>.test.tsx` next to the component.
 - Cover the high-value UI units, mocking the API layer (`packages/contracts` types keep the mocks
   honest):

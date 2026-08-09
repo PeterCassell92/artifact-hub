@@ -15,12 +15,13 @@ Feature: Admin invites a user into a group by email
 
   Scenario: Invitee accepts and is provisioned with immutable group membership
     Given a pending invitation exists for "newuser@example.com" for group "Product"
-    When the invitee opens the invitation link and sets a password
+    When the invitee opens the invitation link
     Then an identity is created for the invitee in the identity provider
+    And no password is set (authentication is passwordless / magic link)
     And an application user record is created with role "member"
     And the invitee is a member of the "Product" group
     And the invitation is marked "accepted"
-    When the invitee logs in
+    When the invitee signs in via a magic link
     Then the invitee cannot change their own group membership
 
   Scenario: Admins can invite further admins
@@ -33,5 +34,5 @@ Feature: Admin invites a user into a group by email
     Given the deployment configures INITIAL_ADMIN_EMAILS with two email addresses
     When the seed runs on first deploy
     Then one admin user is created for each configured email
-    And each seeded admin receives an invitation email to set a password
+    And each seeded admin receives an invitation email to sign in via magic link
     And re-running the seed does not create duplicate admins

@@ -6,6 +6,12 @@
 All metadata lives in RDS PostgreSQL (private subnet). Files live in S3 (`s3_key` references
 only). The schema is expressed with **Prisma**; migrations are managed by Prisma Migrate.
 
+> **Source of truth for modelling is now [`../models/`](../models/).** That folder holds the
+> field-level, implementation-agnostic model definitions (the full artifact **metadata
+> catalogue** and the **AccessEvent** audit trail). The Prisma sketch below is illustrative and
+> will be **reconciled/generated from `../models/`** when we build the first real schema. Where
+> they differ, `../models/` wins.
+
 ---
 
 ## 1. Entity-relationship overview
@@ -41,6 +47,10 @@ enum UserStatus      { invited active disabled }
 enum AudienceType    { public_authenticated specific_users user_groups }
 enum InviteStatus    { pending accepted expired revoked }
 enum RelationType    { supersedes derived_from related_to }
+enum ArtifactKind    { diagram document image report data other }
+enum AccessRoute     { ui share_link mcp }
+enum AccessAction    { view download }
+enum AccessDecision  { allowed denied }
 
 model User {
   id            String   @id @default(uuid())
@@ -104,7 +114,15 @@ model Artifact {
   contentType   String                        // MIME
   s3Key         String       @unique
   sizeBytes     BigInt
-  metadata      Json         @default("{}")    // free-form (JSONB)
+  checksumSha256 String?
+  // ── classification metadata (drives frontend filters; see ../models/artifact.md) ──
+  kind          ArtifactKind @default(other)
+  sourceTool    String?                         // e.g. "Claude Desktop"
+  sourcePlatform String?
+  format        String?                          // e.g. "mermaid", "markdown", "png"
+  formatMeta    Json         @default("{}")      // format-specific (page count, dims, diagram type)
+  language      String?
+  metadata      Json         @default("{}")      // free-form catch-all (JSONB)
 
   // ── access policy (one per artifact) ──
   audienceType  AudienceType @default(specific_users)
@@ -121,10 +139,13 @@ model Artifact {
   shareLinks    ShareLink[]
   relFrom       ArtifactRelationship[] @relation("from")
   relTo         ArtifactRelationship[] @relation("to")
+  accessEvents  AccessEvent[]
 
   @@index([ownerId, createdAt])
   @@index([audienceType])
   @@index([expiresAt])
+  @@index([kind])
+  @@index([sourceTool])
 }
 
 model ArtifactAllowedUser {
@@ -204,15 +225,33 @@ model OutboxEvent {                            // transactional outbox (see 02 �
   processedAt  DateTime?
 }
 
-model AuditLog {                               // see 10 §audit
+model AdminAuditLog {                          // administrative actions (see 10 §audit, models/system.md)
   id         String   @id @default(uuid())
   actorId    String?
-  action     String                            // e.g. "invite.create", "policy.update"
+  action     String                            // "invite.create", "role.change", "policy.update", …
   targetType String
   targetId   String
-  metadata   Json     @default("{}")
+  metadata   Json     @default("{}")           // e.g. { before, after } for role/group changes
   createdAt  DateTime @default(now())
   @@index([targetType, targetId])
+}
+
+model AccessEvent {                            // artifact ACCESS audit trail (see models/access-event.md)
+  id          String         @id @default(uuid())
+  artifactId  String
+  userId      String                            // always set — no anonymous access
+  route       AccessRoute                       // ui | share_link | mcp
+  action      AccessAction                      // view | download
+  shareLinkId String?                           // set when route = share_link
+  decision    AccessDecision                    // allowed | denied (we record denials too)
+  denyReason  String?                           // e.g. "expired", "not_in_audience"
+  clientInfo  Json     @default("{}")           // non-PII: client name/version, coarse UA
+  at          DateTime @default(now())
+  artifact    Artifact @relation(fields: [artifactId], references: [id])
+
+  @@index([artifactId, at])
+  @@index([userId, at])
+  @@index([route])
 }
 ```
 
@@ -227,11 +266,17 @@ model AuditLog {                               // see 10 §audit
   (or null) computed at publish/policy-update time.
 - **Share links carry no policy.** `revoked` is an optional convenience to retire a single link;
   the artifact policy remains authoritative.
-- **`metadata` JSONB** is free-form per-artifact metadata; structured, queryable labels use
-  `Tag`/`ArtifactTag`.
+- **Rich artifact metadata.** Beyond `metadata` JSONB (free-form), we store faceted columns
+  (`kind`, `sourceTool`, `format`, `language`, …) plus `Tag`/`ArtifactTag`, because these drive
+  the frontend filters/search. Full catalogue: [`../models/artifact.md`](../models/artifact.md).
+- **Two audit trails, separate on purpose.** `AccessEvent` = artifact *access* (view/download via
+  `ui` / `share_link` / `mcp`, allowed **and** denied); `AdminAuditLog` = administrative actions
+  (invite, **role.change** promote/demote, group change, **policy.update** revocation). Rationale
+  in [`../models/system.md`](../models/system.md) and [`../models/access-event.md`](../models/access-event.md).
 - **Relationships** are additive and unused by v1 UI beyond storage + a read endpoint.
 - **Immutable group membership** is enforced in the service layer (no self-service mutation
   route) rather than a DB trigger; admin corrective edits are audit-logged.
+- **Passwordless**: `User` has no password field — auth is magic link (see `02`).
 
 ---
 
@@ -242,6 +287,8 @@ model AuditLog {                               // see 10 §audit
 - `Artifact(ownerId, createdAt)` → "My Artifacts."
 - `Artifact(expiresAt)` → optional sweep/reporting of expired artifacts.
 - `Comment(artifactId, createdAt)` → ordered comment lists.
+- `AccessEvent(artifactId, at)` / `AccessEvent(userId, at)` → per-artifact and per-user access
+  history for the audit trail.
 
 ---
 

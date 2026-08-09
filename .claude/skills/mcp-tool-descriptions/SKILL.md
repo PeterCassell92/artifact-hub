@@ -32,6 +32,10 @@ Every tool description must cover, in order:
 - **Authorization is by the caller's token.** Never mention links/presigned URLs as inputs.
 - **Owner-only tools** (`set_access_policy`, `create_share_link`) must state they act only on
   artifacts the caller owns.
+- **Never expose admin / user-management over MCP.** Do not add tools for invite / promote /
+  demote / disable / group management — those are human-UI only (`02` §7). MCP tokens are
+  identity-only and cannot reach `/api/admin/*` (R3). If a request would need an admin action,
+  the tool must decline, not perform it.
 - **Disambiguation that matters here**:
   - `list_artifacts` (my own / "My Artifacts") vs `list_shared_with_me` (shared *to* me).
   - `get_artifact` (small content, inline for reasoning) vs reading the `artifact://<id>`

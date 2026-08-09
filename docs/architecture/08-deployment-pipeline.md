@@ -19,7 +19,7 @@ artifact-hub/
 │   │   ├── src/adapters/mcp  StreamableHTTP /mcp  (05)
 │   │   ├── prisma/           schema.prisma, migrations/, seed.ts
 │   │   └── Dockerfile
-│   └── frontend/         SPA (admin + gallery + artifact detail)
+│   └── frontend/         React SPA — Redux Toolkit + Tailwind (admin + gallery + artifact detail)
 ├── packages/
 │   └── contracts/        shared zod schemas + TS types for the API/MCP contract
 ├── infra/                Terraform (see 07)

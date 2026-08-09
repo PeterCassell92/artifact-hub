@@ -13,6 +13,10 @@ The REST API is the HTTP adapter that serves the SPA (including the admin area) 
 - Base path **`/api`**. JSON in/out. `application/json` unless streaming a download.
 - **Auth**: every route except the share-redemption bootstrap and health requires a valid Auth0
   bearer token (see `02`). A shared middleware resolves the token → `users` row and attaches it.
+  `/api/*` accepts **only the API audience** — **MCP-audience tokens are rejected** (`02` §1.2).
+  A token with no provisioned `users` row, or `status != active`, is denied (never auto-provisioned).
+- **Admin routes** (`/api/admin/*`): require the **API audience** **and** `role=admin` — so an MCP
+  token structurally cannot reach user-management (`02` §7). No admin action is exposed over MCP.
 - **Validation**: zod schema per route; invalid input → `400` with a structured error.
 - **Authorization**: route handlers call `core` authz functions (`03`); never re-implement checks.
 - **Pagination**: cursor-based (`?cursor=&limit=`), `limit` default 20 / max 100.
@@ -25,21 +29,33 @@ The REST API is the HTTP adapter that serves the SPA (including the admin area) 
 
 ---
 
+> **Publishing is MCP-only.** There is **no create/upload route exposed to the SPA** — new
+> artifacts are created exclusively through the MCP `publish_artifact` path (see `05`). The
+> `POST /api/artifacts` + `finalize` endpoints below back **that agent publish flow** (or an
+> internal `core` call), not a frontend screen. The SPA is view/manage only.
+
 ## 2. Artifact routes
 
 | Method & path | Purpose | Authz |
 |---------------|---------|-------|
-| `POST /api/artifacts` | Create artifact metadata + policy; returns a **presigned PUT** for the body | authenticated (becomes owner) |
-| `POST /api/artifacts/:id/finalize` | Confirm upload complete (size/mime recorded) | owner |
-| `GET /api/artifacts/:id` | Artifact detail (metadata + policy + can-I-view) | `canView` |
-| `GET /api/artifacts` | List artifacts visible to me (filters: `mine`, `sharedWithMe`, `sinceHours`) | per-item `canView` |
-| `GET /api/artifacts/:id/download` | Mint ~60s presigned S3 URL and `302` redirect | `canView` |
-| `PUT /api/artifacts/:id/policy` | Change audience + expiry (**revocation**) | owner (`canManagePolicy`) |
+| `POST /api/artifacts` | (MCP publish path) Create artifact metadata + policy; returns a **presigned PUT** for the body | authenticated (becomes owner) |
+| `POST /api/artifacts/:id/finalize` | (MCP publish path) Confirm upload complete (size/mime/checksum recorded) | owner |
+| `GET /api/artifacts/:id` | Artifact detail (metadata + policy + can-I-view). **Records an AccessEvent** (`route=ui`, `view`) | `canView` |
+| `GET /api/artifacts` | List artifacts visible to me (filters: `mine`, `sharedWithMe`, `sinceHours`, plus search/facets — see frontend/02) | per-item `canView` |
+| `GET /api/artifacts/:id/download` | Mint ~60s presigned S3 URL and `302` redirect. **Records an AccessEvent** (`route=ui`, `download`) | `canView` |
+| `PUT /api/artifacts/:id/policy` | Change audience + expiry (**revocation**). Writes `AdminAuditLog` `policy.update` | owner (`canManagePolicy`) |
+| `GET /api/artifacts/:id/access-events` | Access history for an artifact (audit trail) | owner (or admin) |
 | `GET /api/artifacts/:id/relationships` | List related artifacts | `canView` |
 | `POST /api/artifacts/:id/relationships` | Link a relationship (supersedes/derived_from/related_to) | owner |
 
 `GET /api/artifacts?sharedWithMe=1&sinceHours=24` mirrors the MCP `list_shared_with_me` and
-uses the `ArtifactAllowedUser(userId)` / `ArtifactAllowedGroup(groupId)` indexes (`04` §4).
+uses the `ArtifactAllowedUser(userId)` / `ArtifactAllowedGroup(groupId)` indexes (`04` §4). The
+list endpoints also accept `q` (search) and the facet filters defined in
+[`../frontend/02-filtering-and-search.md`](../frontend/02-filtering-and-search.md).
+
+**Access auditing:** every view/download here — and every share-link redemption (`§4`) and MCP
+resource read (`05`) — writes an `AccessEvent` capturing the **route** (`ui` / `share_link` /
+`mcp`), `action`, and `decision` (allowed **or** denied). See [`../models/access-event.md`](../models/access-event.md).
 
 ## 3. Comment routes
 
@@ -53,7 +69,7 @@ uses the `ArtifactAllowedUser(userId)` / `ArtifactAllowedGroup(groupId)` indexes
 | Method & path | Purpose | Authz |
 |---------------|---------|-------|
 | `POST /api/artifacts/:id/share-links` | Mint a locator link `/s/<token>` | owner |
-| `GET /api/s/:token` | Redeem: resolve token → require auth → `canView` → `302` to presigned URL (or artifact detail) | `canView` after login |
+| `GET /api/s/:token` | Redeem: resolve token → require auth (magic link) → `canView` → `302` to presigned URL (or artifact detail). **Records an AccessEvent** (`route=share_link`, with `shareLinkId`) | `canView` after login |
 | `POST /api/artifacts/:id/share-links/:linkId/revoke` | Retire a single link (optional; policy still authoritative) | owner |
 
 Redemption never trusts the token for access — it only locates the artifact; the current policy

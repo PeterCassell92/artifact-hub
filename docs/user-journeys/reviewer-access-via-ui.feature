@@ -12,11 +12,13 @@ Feature: Access and review an artifact via the web UI
   Scenario: Sign in and view the artifact from a shared link
     When User B clicks the shared link
     Then User B is directed to the frontend
-    And User B is required to log in with username and password
-    When User B logs in successfully
+    And User B is required to sign in
+    When User B enters their email and receives a magic link
+    And User B clicks the magic link and is authenticated
     Then User B is redirected to the artifact detail view
     And User B can view the artifact
     And User B can download the artifact
+    And the view and the download are each recorded as access events
 
   Scenario: Read and add a comment
     Given User B is viewing the artifact detail view

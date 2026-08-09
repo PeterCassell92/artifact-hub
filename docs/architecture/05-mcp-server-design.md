@@ -19,13 +19,26 @@ artifacts conversationally.
 
 ## 2. Authentication & authorization
 
-- The server is an OAuth **Resource Server** (see `02` §1): it advertises Protected Resource
-  Metadata and relies on Auth0 + Dynamic Client Registration so clients self-register.
-- Every request carries a bearer token, validated by the **same** middleware as `/api/*`,
-  resolving to a local `users` row.
+Full flow and rules: [`02` §1.1](02-auth-identity-and-admin.md). In brief:
+
+- The server is an OAuth **Resource Server**: it advertises Protected Resource Metadata and relies
+  on Auth0 + Dynamic Client Registration so clients self-register; login uses the **passwordless
+  magic link** in the OAuth browser step.
+- Every request carries a bearer token validated for signature/issuer/expiry **and audience** — a
+  token is accepted only if `aud` = the **MCP resource** (**R2**, reject otherwise). The token
+  resolves to a local `users` row; **if none, or `status != active`, the request is denied — the
+  MCP path never provisions users** (**R1/R4**, admin-controlled user set).
+- **Identity-only tokens (R3).** The agent may do **everything the human member can do** (publish,
+  view per policy, comment, share, manage its own artifacts' policy) — but **no admin /
+  user-management** action. There are **no admin MCP tools**, and admin routes live only under
+  `/api/admin/*` (API audience + `role=admin`), which an MCP token cannot reach.
 - Every tool/resource call runs the **same `canView` / `canComment` / `canManagePolicy`**
   functions from `03`. The agent's identity (from its token) is the authorization subject —
   **never** a link or presigned URL.
+
+### Out of scope for the MCP surface (never exposed as tools)
+User management (invite/promote/demote/disable), group management, and any other admin action.
+These are human-UI functions on `/admin` only (see `02` §7, `../frontend/`).
 
 ---
 
@@ -66,6 +79,12 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 | `set_access_policy` | Change an owned artifact's audience/expiry (revoke) | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
 
 Notes:
+- **Publishing is exclusive to this path** — there is no publish/upload screen in the SPA (see
+  `06` and `../frontend/`). Artifacts are created only via `publish_artifact`.
+- **Capture rich metadata at publish.** `publish_artifact` should collect the classification
+  metadata that powers the frontend filters — `kind`, `tags`, `sourceTool` (e.g. "Claude
+  Desktop"), `format`, plus free-form `metadata` — per [`../models/artifact.md`](../models/artifact.md).
+  The backend derives `fileExtension`, `sizeBytes`, `checksumSha256`.
 - **Upload path** for `publish_artifact`: hand the client a **presigned PUT** so bytes go
   straight to S3 out-of-band (`bytesRef` correlates the upload), *or* accept small content
   inline for tiny artifacts. Large bytes never transit a tool argument/result.
@@ -89,7 +108,9 @@ Notes:
 
 - **`artifact://<id>`** — the artifact body. On `resources/read`: validate token → `canView` →
   server-side S3 `GetObject` via IAM role → return `{ blob(base64), mimeType }`. This is the
-  **only** way an agent obtains file bytes.
+  **only** way an agent obtains file bytes. Each read **records an AccessEvent** (`route=mcp`,
+  `action=download`, `decision=allowed|denied`) — the agent access route in the audit trail
+  (see [`../models/access-event.md`](../models/access-event.md)).
 - Optionally a **collection resource** listing artifacts the caller may read (browsable). v1 can
   rely on the `list_*` tools instead; the collection resource is a nice-to-have.
 

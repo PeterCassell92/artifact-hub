@@ -14,4 +14,5 @@ Step definitions are future implementation work; these files define the intended
 | `reviewer-access-via-ui.feature` | Reviewer (User B) | Login → view/download → read/add comment |
 | `reviewer-access-via-mcp.feature` | Reviewer (User B) | "Shared with me in 24h" table + Resource download |
 | `admin-invite-user.feature` | Admin | Email invite into a group; immutable membership |
+| `admin-promote-user.feature` | Admin | Promote/demote existing users; last-admin guardrail |
 | `access-denied-after-expiry.feature` | Reviewer (User B) | Old link denied once expired/revoked |
