@@ -1,0 +1,127 @@
+# CLAUDE.md — Artifact Hub
+
+Guidance for working in this repo. Read the design docs in [`docs/architecture/`](docs/architecture/)
+before making structural changes — [`01-overview.md`](docs/architecture/01-overview.md) is the entry
+point and holds the decision log.
+
+> **Status:** design-complete, pre-implementation. The layout and scripts below describe the
+> intended structure; create files to match it as implementation proceeds.
+
+## What this is
+
+A hosted platform to publish and share AI-generated artifacts (PDF/HTML/images/docx/mmd/md) with
+managed, revocable access control, usable by humans (web SPA) and AI agents (MCP server). One
+backend (Express) serves both `/api/*` and `/mcp` over a shared `core` domain layer.
+
+## Core principles (don't violate these)
+
+- **No anonymous access** — every viewer is authenticated. See [03](docs/architecture/03-authorization-and-access-control.md).
+- **One owner-controlled access policy per artifact**, re-evaluated on every request → revocation
+  is instant; **share links are pure locators**, never bearer tokens of access.
+- **The backend makes no LLM calls** — all logic is deterministic. Review summaries are an MCP
+  **Prompt** run by the client's model.
+- **Files never come back as MCP tool results** — agent file delivery is via the
+  `artifact://<id>` **Resource**; presigned S3 URLs are confined to the browser/download path.
+- **Group membership is admin-assigned and immutable to the user** — there is no self-service
+  group-change route.
+
+## Tech stack
+
+- **Package manager:** yarn (workspaces). **Monorepo.**
+- **Backend:** Node + TypeScript, **Express**, zod validation, **Prisma** (Postgres), MCP TS SDK
+  (Streamable HTTP).
+- **Frontend:** React SPA (admin + gallery + artifact detail).
+- **Shared:** `packages/contracts` — zod schemas + TS types for the API/MCP contract, imported by
+  both apps.
+- **Infra:** AWS via Terraform (ECS Fargate + ALB, RDS, S3, CloudFront, SES, Secrets Manager);
+  Auth0 IdP. See [07](docs/architecture/07-infrastructure-and-iac.md).
+- **Tests:** Jest everywhere; supertest + Testcontainers (API); MCP SDK in-memory + HTTP (MCP);
+  React Testing Library (`*.test.tsx`). **No E2E/Playwright in v1.** See [09](docs/architecture/09-testing-strategy.md).
+
+## Repo layout
+
+```
+apps/backend      Express + MCP + Prisma + core domain   (own package.json)
+apps/frontend     React SPA                               (own package.json)
+packages/contracts  shared zod schemas + TS types         (own package.json)
+infra/            Terraform
+docs/             architecture docs + BDD user-journeys
+package.json      root: private, workspaces + fan-out scripts
+```
+
+Each app/package has its **own `package.json`**. The **root `package.json`** declares
+`workspaces: ["apps/*", "packages/*"]` and root fan-out scripts.
+
+## Yarn scripts
+
+### Root (fan out across all workspaces)
+| Command | Does |
+|---------|------|
+| `yarn install` | Install all workspace deps |
+| `yarn test` | Run all tests (backend + frontend) |
+| `yarn lint` | Lint all workspaces |
+| `yarn typecheck` | Typecheck all workspaces |
+| `yarn build` | Build all workspaces |
+
+### Target one workspace
+Use `yarn workspace <name> <script>` where `<name>` is `backend`, `frontend`, or `contracts`.
+
+### Backend (`yarn workspace backend <script>`)
+| Command | Does |
+|---------|------|
+| `dev` | Run the backend locally (API + `/mcp`) with reload |
+| `build` | Compile TypeScript |
+| `test` | All backend tests |
+| `test:unit` | Core domain unit tests (authz, policy, invites) — fast, no I/O |
+| `test:integration` | API integration tests (supertest + **Testcontainers Postgres**; needs Docker) |
+| `test:mcp` | MCP tests (SDK in-memory + HTTP black-box against `/mcp`) |
+| `test:cov` | Tests with coverage (enforced on `core`) |
+| `db:migrate` | `prisma migrate dev` (see the `prisma-migrate` skill) |
+| `db:deploy` | `prisma migrate deploy` (CI/prod) |
+| `db:reset` | `prisma migrate reset` (destroys dev DB) |
+| `db:seed` | `prisma db seed` (initial groups + `INITIAL_ADMIN_EMAILS` admins, idempotent) |
+| `db:studio` | Open Prisma Studio |
+
+### Frontend (`yarn workspace frontend <script>`)
+| Command | Does |
+|---------|------|
+| `dev` | Run the SPA dev server |
+| `build` | Production build |
+| `test` | React component unit tests (`*.test.tsx`) |
+| `test --watch` | Watch mode for the dev loop |
+
+### Typical dev loop
+```bash
+yarn install
+yarn workspace backend db:migrate            # after editing schema.prisma
+yarn workspace backend dev                    # terminal 1: backend
+yarn workspace frontend dev                   # terminal 2: SPA
+yarn test                                     # before pushing
+```
+
+## Migrations
+
+Prisma. **Never edit an applied migration** — add a new one. Write migrations expand/contract so
+rolling deploys stay safe. Full rules in the **`prisma-migrate`** skill and
+[04](docs/architecture/04-data-model.md) §6.
+
+## MCP surface
+
+When adding/editing an MCP tool/resource/prompt, follow the **`mcp-tool-descriptions`** skill
+(what / when / when-not / disambiguation / example) so agents pick the right tool. Surface is
+defined in [05](docs/architecture/05-mcp-server-design.md).
+
+## Testing expectations
+
+- Backend: **core unit** (largest), **API integration** (supertest + Testcontainers), **MCP
+  layered** (in-memory + HTTP).
+- Frontend: **React component** unit tests (`*.test.tsx`, React Testing Library + jsdom).
+- Manual MCP checks: **MCP Inspector** and **Claude Desktop** (verify base64/mimeType/magic bytes).
+- CI runs `yarn lint`, `yarn typecheck`, `yarn test` on every PR.
+
+## Conventions
+
+- Route handlers call `core` authz functions (`canView`/`canComment`/`canManagePolicy`) — never
+  re-implement access checks.
+- Read role/group from the **database**, never trust token claims for authorization.
+- Keep request/response types in `packages/contracts` so both apps type-check against one contract.
