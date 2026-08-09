@@ -33,6 +33,13 @@ backend (Express) serves both `/api/*` and `/mcp` over a shared `core` domain la
 
 ## Tech stack
 
+- **Toolchain:** pinned with **Volta** (the `volta` field in **root** `package.json`), **not**
+  `.nvmrc`. It pins **both `node` and `yarn`**, so `cd`-ing into the repo auto-switches everyone to
+  the same Node **and** Yarn — no manual `nvm use` / `corepack` locally. Pin only at the root; Volta
+  resolves the toolchain from the nearest package.json up the tree, so the workspace packages
+  (`apps/*`, `packages/*`) don't need their own `volta` field. Bump via `volta pin node@<v>` /
+  `volta pin yarn@<v>`. The `packageManager` field stays in sync as the corepack fallback for
+  environments without Volta (e.g. CI). Do not add an `.nvmrc`.
 - **Package manager:** yarn (workspaces). **Monorepo.** Both frontend and backend use
   **`nodeLinker: node-modules`** (set in root `.yarnrc.yml`), **not** Plug'n'Play (PnP) — so a
   real `node_modules/` tree is installed, which keeps Prisma, Jest/Testcontainers, bundlers, and
@@ -106,15 +113,21 @@ Use `yarn workspace <name> <script>` where `<name>` is `backend`, `frontend`, or
 | `test` | React component unit tests (`*.test.tsx`) |
 | `test --watch` | Watch mode for the dev loop |
 
-### Typical dev loop
+### First-time setup / dev loop
 ```bash
+corepack enable                               # activates the pinned Yarn (Volta pins Node)
 docker compose up -d                          # Postgres + MailCatcher (email catcher)
 yarn install
-yarn workspace backend db:migrate            # after editing schema.prisma
-yarn workspace backend dev                    # terminal 1: backend
+yarn workspace contracts build                # build the shared package once (apps import its dist)
+yarn workspace backend prisma:generate        # generate the Prisma client
+yarn workspace backend db:migrate             # create/apply the first migration (after editing schema.prisma)
+yarn workspace backend db:seed                # seed groups + INITIAL_ADMIN_EMAILS
+yarn workspace backend dev                    # terminal 1: backend (api + mcp)
 yarn workspace frontend dev                   # terminal 2: SPA
 yarn test                                     # before pushing
 ```
+Rebuild `contracts` (`yarn workspace contracts build`) whenever you change its types — the apps
+consume its compiled `dist`. The root `yarn build` already builds contracts first.
 
 Emails in dev (invitations / notifications) are caught by **MailCatcher** — read them at
 `http://localhost:1080`. See [development/email-catcher.md](docs/development/email-catcher.md).

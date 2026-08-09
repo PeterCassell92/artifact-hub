@@ -1,0 +1,71 @@
+/**
+ * The single authorization decision used by the API, MCP, and share-link paths.
+ * Pure — no I/O — so it is exhaustively unit-tested (docs/architecture/03 + 09).
+ */
+import type { AudienceType, UserStatus } from "contracts";
+
+export interface Viewer {
+  id: string;
+  status: UserStatus;
+  groupIds: string[];
+}
+
+export interface ArtifactPolicy {
+  ownerId: string;
+  audienceType: AudienceType;
+  expiresAt: Date | null; // null = never
+  allowedUserIds: string[];
+  allowedGroupIds: string[];
+}
+
+export type DenyReason = "disabled" | "expired" | "not_in_audience";
+
+export interface Decision {
+  allowed: boolean;
+  reason?: DenyReason;
+}
+
+const ALLOW: Decision = { allowed: true };
+const deny = (reason: DenyReason): Decision => ({ allowed: false, reason });
+
+/** Can this viewer view/download the artifact right now? */
+export function canView(
+  viewer: Viewer,
+  policy: ArtifactPolicy,
+  now: Date,
+): Decision {
+  // Disabled users are blocked immediately (R4), even the owner.
+  if (viewer.status === "disabled") return deny("disabled");
+
+  // Owner always retains access — even after expiry ("My Artifacts").
+  if (viewer.id === policy.ownerId) return ALLOW;
+
+  if (policy.expiresAt !== null && now >= policy.expiresAt) return deny("expired");
+
+  switch (policy.audienceType) {
+    case "public_authenticated":
+      return ALLOW; // viewer is authenticated by definition
+    case "specific_users":
+      return policy.allowedUserIds.includes(viewer.id)
+        ? ALLOW
+        : deny("not_in_audience");
+    case "user_groups":
+      return viewer.groupIds.some((g) => policy.allowedGroupIds.includes(g))
+        ? ALLOW
+        : deny("not_in_audience");
+  }
+}
+
+/** Commenting requires view permission (and an authenticated caller, always true here). */
+export function canComment(
+  viewer: Viewer,
+  policy: ArtifactPolicy,
+  now: Date,
+): Decision {
+  return canView(viewer, policy, now);
+}
+
+/** Only the (active) owner may change the access policy. */
+export function canManagePolicy(viewer: Viewer, policy: ArtifactPolicy): boolean {
+  return viewer.status !== "disabled" && viewer.id === policy.ownerId;
+}

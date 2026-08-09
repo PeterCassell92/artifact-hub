@@ -66,6 +66,18 @@ infra/
   Secrets Manager (`INITIAL_ADMIN_EMAILS`, Auth0 client secret + Management API creds, DB
   password, SES sender). The ECS task reads them at boot / via the AWS SDK.
 
+### Secrets strategy (three layers — pick the store by where the secret is consumed)
+
+| Layer | Store | What lives there | How it's consumed |
+|-------|-------|------------------|-------------------|
+| **Runtime (prod/staging)** | **AWS Secrets Manager** | RDS password, Auth0 client secret + Management API creds, SES identity, any app secret | Injected into the **ECS task** (`secrets`/`valueFrom` ARN) or read via SDK at boot; Terraform-provisioned; IAM-scoped; rotatable; CloudTrail-audited |
+| **CI (GitHub Actions)** | **GitHub Secrets — minimized** | *Ideally nothing secret* — AWS auth is via **OIDC role assumption** (no static keys); GitHub holds only the role ARN / region (config, not secrets) | Read by the workflow; CI never handles runtime app secrets (those are fetched at runtime, not baked at build) |
+| **Dev (local)** | **git-ignored `.env`** | Local Postgres password, local-only values | Root `.env` (docker-compose) + `apps/*/.env` (apps); `.env.example` committed as the template |
+
+**Rule of thumb:** runtime secrets → Secrets Manager (never GitHub Secrets, never the image);
+CI → OIDC so there's nothing to leak; dev → `.env`. Real secrets are never committed and never pass
+through the CI pipeline into the runtime.
+
 ---
 
 ## 3. Compute & concurrency

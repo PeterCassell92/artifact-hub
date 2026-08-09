@@ -1,0 +1,310 @@
+// Artifact Hub — Prisma schema
+//
+// Source of truth for these models is docs/models/ (field-level definitions) and
+// docs/architecture/04-data-model.md (ERD + rationale). Keep them in sync.
+//
+// Conventions: opaque UUID ids; UTC timestamps; no artifact edit/delete in v1;
+// passwordless auth (no password field); one access policy per artifact.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── enums ───────────────────────────
+
+enum Role {
+  member
+  admin
+}
+
+enum UserStatus {
+  invited
+  active
+  disabled
+}
+
+enum AudienceType {
+  public_authenticated
+  specific_users
+  user_groups
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
+enum RelationType {
+  supersedes
+  derived_from
+  related_to
+}
+
+enum ArtifactKind {
+  diagram
+  document
+  image
+  report
+  data
+  other
+}
+
+enum AccessRoute {
+  ui
+  share_link
+  mcp
+}
+
+enum AccessAction {
+  view
+  download
+}
+
+enum AccessDecision {
+  allowed
+  denied
+}
+
+// ─────────────────────────── identity ───────────────────────────
+
+model User {
+  id        String     @id @default(uuid())
+  idpSub    String?    @unique // Auth0 subject; null until first magic-link sign-in
+  email     String     @unique
+  name      String?
+  avatarUrl String?
+  role      Role       @default(member)
+  status    UserStatus @default(invited)
+  createdAt DateTime   @default(now())
+
+  memberships  GroupMembership[]
+  artifacts    Artifact[]            @relation("owner")
+  comments     Comment[]
+  allowedFor   ArtifactAllowedUser[]
+  shareLinks   ShareLink[]
+  invitesSent  Invitation[]          @relation("invitedBy")
+  accessEvents AccessEvent[]
+}
+
+model Group {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  memberships GroupMembership[]
+  allowedFor  ArtifactAllowedGroup[]
+}
+
+// Admin-assigned at invite time; immutable by the user (enforced in the service layer).
+model GroupMembership {
+  userId  String
+  groupId String
+  addedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  group Group @relation(fields: [groupId], references: [id])
+
+  @@id([userId, groupId])
+}
+
+model Invitation {
+  id          String       @id @default(uuid())
+  email       String
+  role        Role         @default(member)
+  groupIds    String[] // groups to assign on accept (immutable thereafter)
+  tokenHash   String       @unique // sha-256 of the emailed token; raw token only in the link
+  status      InviteStatus @default(pending)
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime     @default(now())
+
+  invitedBy User @relation("invitedBy", fields: [invitedById], references: [id])
+
+  @@index([email])
+}
+
+// ─────────────────────────── artifacts ───────────────────────────
+
+model Artifact {
+  id             String  @id @default(uuid())
+  ownerId        String
+  title          String
+  description    String?
+  fileName       String
+  contentType    String // MIME
+  s3Key          String  @unique
+  sizeBytes      BigInt
+  checksumSha256 String?
+
+  // classification metadata (drives frontend filters; see docs/models/artifact.md)
+  kind           ArtifactKind @default(other)
+  sourceTool     String? // e.g. "Claude Desktop"
+  sourcePlatform String?
+  format         String? // e.g. "mermaid", "markdown", "png"
+  formatMeta     Json         @default("{}")
+  language       String?
+  metadata       Json         @default("{}") // free-form catch-all
+
+  // access policy (one per artifact — see docs/architecture/03)
+  audienceType      AudienceType @default(specific_users)
+  expiresAt         DateTime? // null = never
+  policyUpdatedAt   DateTime     @default(now())
+  policyUpdatedById String? // owner who last changed the policy
+
+  createdAt DateTime @default(now())
+
+  owner         User                   @relation("owner", fields: [ownerId], references: [id])
+  allowedUsers  ArtifactAllowedUser[]
+  allowedGroups ArtifactAllowedGroup[]
+  tags          ArtifactTag[]
+  comments      Comment[]
+  shareLinks    ShareLink[]
+  relFrom       ArtifactRelationship[]  @relation("from")
+  relTo         ArtifactRelationship[]  @relation("to")
+  accessEvents  AccessEvent[]
+
+  @@index([ownerId, createdAt])
+  @@index([audienceType])
+  @@index([expiresAt])
+  @@index([kind])
+  @@index([sourceTool])
+}
+
+model ArtifactAllowedUser {
+  artifactId String
+  userId     String
+
+  artifact Artifact @relation(fields: [artifactId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@id([artifactId, userId])
+  @@index([userId]) // "shared directly with me"
+}
+
+model ArtifactAllowedGroup {
+  artifactId String
+  groupId    String
+
+  artifact Artifact @relation(fields: [artifactId], references: [id])
+  group    Group    @relation(fields: [groupId], references: [id])
+
+  @@id([artifactId, groupId])
+  @@index([groupId]) // "shared with my group"
+}
+
+model Tag {
+  id   String @id @default(uuid())
+  name String @unique
+
+  artifacts ArtifactTag[]
+}
+
+model ArtifactTag {
+  artifactId String
+  tagId      String
+
+  artifact Artifact @relation(fields: [artifactId], references: [id])
+  tag      Tag      @relation(fields: [tagId], references: [id])
+
+  @@id([artifactId, tagId])
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  artifactId String
+  authorId   String
+  body       String
+  createdAt  DateTime @default(now())
+
+  artifact Artifact @relation(fields: [artifactId], references: [id])
+  author   User     @relation(fields: [authorId], references: [id])
+
+  @@index([artifactId, createdAt])
+}
+
+// Pure locator — carries NO access policy. Redemption re-runs canView vs the artifact's policy.
+model ShareLink {
+  id          String   @id @default(uuid())
+  artifactId  String
+  tokenHash   String   @unique // sha-256 of /s/<token>
+  createdById String
+  revoked     Boolean  @default(false) // optional single-link retire; policy stays authoritative
+  createdAt   DateTime @default(now())
+
+  artifact     Artifact      @relation(fields: [artifactId], references: [id])
+  createdBy    User          @relation(fields: [createdById], references: [id])
+  accessEvents AccessEvent[]
+}
+
+// Forward-looking: enables future UI/agent navigation between related artifacts.
+model ArtifactRelationship {
+  id          String       @id @default(uuid())
+  fromId      String
+  toId        String
+  type        RelationType
+  createdById String
+  createdAt   DateTime     @default(now())
+
+  from Artifact @relation("from", fields: [fromId], references: [id])
+  to   Artifact @relation("to", fields: [toId], references: [id])
+
+  @@unique([fromId, toId, type])
+}
+
+// ─────────────────────────── audit & system ───────────────────────────
+
+// Artifact ACCESS audit trail (view/download via ui | share_link | mcp; allowed AND denied).
+model AccessEvent {
+  id          String         @id @default(uuid())
+  artifactId  String
+  userId      String // always set — no anonymous access
+  route       AccessRoute
+  action      AccessAction
+  shareLinkId String? // set when route = share_link
+  decision    AccessDecision
+  denyReason  String? // e.g. "expired", "not_in_audience"
+  clientInfo  Json           @default("{}") // non-PII: client name/version, coarse UA
+  at          DateTime       @default(now())
+
+  artifact  Artifact   @relation(fields: [artifactId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+  shareLink ShareLink? @relation(fields: [shareLinkId], references: [id])
+
+  @@index([artifactId, at])
+  @@index([userId, at])
+  @@index([route])
+}
+
+// Administrative actions (invite / role.change / policy.update / …) — NOT artifact reads.
+model AdminAuditLog {
+  id         String   @id @default(uuid())
+  actorId    String? // null for system/seed
+  action     String
+  targetType String
+  targetId   String
+  metadata   Json     @default("{}") // e.g. { before, after }
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId])
+}
+
+// Transactional outbox — reliable external side-effects (SES email, Auth0 provisioning).
+model OutboxEvent {
+  id             String    @id @default(uuid())
+  type           String // e.g. "invitation.send"
+  payload        Json
+  status         String    @default("pending") // pending | done | failed
+  attempts       Int       @default(0)
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  processedAt    DateTime?
+}

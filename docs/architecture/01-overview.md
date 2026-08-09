@@ -151,6 +151,7 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 35 | MCP auth flow | OAuth 2.1 (PRM + DCR + PKCE + resource indicator); magic link in popup | DECIDED | 02 §1.1 |
 | 36 | MCP token rules | Deny-if-not-provisioned, audience-bound, identity-only, disabled-blocked | DECIDED | 02 §1.1 |
 | 37 | Admin over MCP | **Not allowed** — no admin MCP tools; `/api/admin/*` rejects MCP tokens | DECIDED | 02/05/06 |
+| 38 | Secrets strategy | Runtime → AWS Secrets Manager; CI → GitHub+OIDC (minimal); dev → `.env` | DECIDED | 07 |
 
 Items that were **OPEN** in the WIP doc (backend host, frontend host, authz model, HTML
 sandboxing) are now all closed above.

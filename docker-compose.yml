@@ -1,0 +1,33 @@
+# Local dev services. See docs/development/email-catcher.md.
+#   Postgres    → the backend's DATABASE_URL
+#   MailCatcher → catches backend-sent emails (invites/notifications); UI at http://localhost:1080
+services:
+  postgres:
+    image: postgres:16
+    # Values come from the git-ignored root .env (docker compose auto-loads it).
+    # Copy .env.example -> .env first. User/DB have non-secret dev defaults; the password
+    # must be set in .env. Real (prod) secrets live in AWS Secrets Manager (docs 07).
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-artifacthub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your root .env (copy .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:-artifacthub}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailcatcher:
+    # dockage/mailcatcher is multi-arch; use chrislpierce/mailcatcher on Apple Silicon if needed
+    image: dockage/mailcatcher:latest
+    ports:
+      - "1025:1025" # SMTP  — backend sends here
+      - "1080:1080" # Web   — read caught mail at http://localhost:1080
+    restart: unless-stopped
+
+volumes:
+  pgdata:
