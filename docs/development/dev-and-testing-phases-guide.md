@@ -128,12 +128,29 @@ working client config yet. The intended shape (Streamable HTTP) is:
 
 For Claude Code you can equivalently run `claude mcp add --transport http artifact-hub-local http://localhost:3081/mcp`.
 
-**Open item — authentication.** `/mcp` is an OAuth **Resource Server**: every request must carry a
-**bearer token whose `aud` = the MCP audience (R2)**, resolving to an **active** local user (R1/R4),
-obtained via the **passwordless magic-link** OAuth step ([`05` §2](../architecture/05-mcp-server-design.md),
-[`02` §1.1](../architecture/02-auth-identity-and-admin.md)). So the config above is not yet
-sufficient on its own; the client must complete that OAuth/DCR browser flow (or, for scripted
-tests, be handed a valid audience-bound token). **How each client (Claude Code vs Claude Desktop)
-performs the interactive sign-in is the thing Phase 2 and Phase 4 exist to nail down.** When the
-server's auth is implemented we'll finalise this section (and, if a static example is safe, add a
-committed example client config).
+**Authentication — decided (two tracks).** `/mcp` is an OAuth **Resource Server**: every request
+must carry a **bearer token whose `aud` = the MCP audience (R2)**, resolving to an **active** local
+user (R1/R4) ([`05` §2](../architecture/05-mcp-server-design.md),
+[`02` §1.1](../architecture/02-auth-identity-and-admin.md)). We satisfy that two ways depending on
+realism:
+
+1. **Local / automated / manual-iteration (Phases 1–3) — a locally-minted audience-bound token.**
+   We do **not** drive the interactive OAuth/DCR browser flow for every test. Instead we **hand the
+   client a valid audience-bound token**, exactly mirroring how the API integration tests stub Auth0
+   with **signed test JWTs** ([`09` §3–§4](../architecture/09-testing-strategy.md)). The RS
+   validation is shared middleware parameterised by the expected audience ([`02` §1](../architecture/02-auth-identity-and-admin.md)),
+   so a token minted with the **MCP audience** and a `sub` for a seeded active user flows through the
+   **real** signature/issuer/audience/`status=active` checks (R1/R2/R4) — only the *signer* is a
+   dev/test key trusted **in dev/test only**, never in prod.
+   - **Automated (Jest):** the shared test-token helper mints the JWT in-process.
+   - **Manual (you, at the REPL of a chat client):** mint one via the **dev-only token endpoint** and
+     paste it into your MCP client config's `Authorization` header — this is what the
+     [Bruno collection](bruno-mcp-token.md) automates.
+2. **Deployed final validation (Phase 4) — the real interactive flow.** Against the deployed Fly
+   `/mcp`, **Claude Desktop** completes the genuine **OAuth/DCR + passwordless magic-link** browser
+   sign-in (R5). No shortcut token here — Phase 4 exists precisely to prove that real flow end-to-end.
+   The dev token endpoint is **not** deployed to prod.
+
+So the client config above is sufficient for Phases 2–3 **once you add the minted bearer token**;
+Phase 4 relies on the client's interactive sign-in instead. See [`bruno-mcp-token.md`](bruno-mcp-token.md)
+for the mint-and-copy workflow.

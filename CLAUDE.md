@@ -78,8 +78,11 @@ Docs map: [architecture/](docs/architecture/) (decisions, entry point `01`), [mo
 (field-level domain models — schema source of truth), [frontend/](docs/frontend/) (UX; no publish
 UI), [user-journeys/](docs/user-journeys/) (BDD), [development/](docs/development/) (dev tooling +
 [dev-and-testing-phases-guide.md](docs/development/dev-and-testing-phases-guide.md): local stack,
-test phases, MCP client config; [environment-prerequisites.md](docs/development/environment-prerequisites.md):
-per-environment external services to set up).
+test phases, MCP client config; [bruno-mcp-token.md](docs/development/bruno-mcp-token.md): Bruno
+collection to mint an MCP bearer token for manual testing; [environment-prerequisites.md](docs/development/environment-prerequisites.md):
+per-environment external services to set up), [future-features/](docs/future-features/) (speculative
+post-v1 ideas, e.g. [AI-features.md](docs/future-features/AI-features.md): server-side LLM inference
+over the artifact corpus).
 
 Each app/package has its **own `package.json`**. The **root `package.json`** declares
 `workspaces: ["apps/*", "packages/*"]` and root fan-out scripts.
