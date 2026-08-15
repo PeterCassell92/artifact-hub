@@ -44,8 +44,35 @@ user directory (each user keyed by Auth0 subject `idp_sub`):
   each endpoint is a **distinct OAuth resource with its own audience** (see §1.2) — an MCP token is
   audience-bound to the MCP resource and is **not** accepted at `/api/*` (and vice-versa).
 
-> ⚠️ **Verify before building:** confirm **DCR is available on the Auth0 tier we use** — the
-> MCP connection depends on it. (Auth0 reached GA MCP support ~May 2026; validate on the tenant.)
+> ✅ **Verified (Auth0 live docs, Aug 2026).** Auth0 ships a first-class **"Auth for MCP"** product
+> ([auth0.com/ai/docs/mcp](https://auth0.com/ai/docs/mcp/intro/overview)) covering exactly this flow:
+> OAuth 2.1 + OIDC, **Dynamic Client Registration**, and the **RFC 8707 `resource` parameter**. The
+> two things this depends on are **tenant toggles**, not a bespoke build — see *Auth0 tenant config*
+> below. (Note: Auth0's OBO **Token Exchange** and **Token Vault** features are **not needed** here —
+> those are for MCP servers that call a *separate* internal API or third-party SaaS; ours validates
+> the token and runs the shared `core` layer directly.)
+
+#### Auth0 tenant config for `/mcp` (verified — set these on each environment's tenant)
+
+Both are **Dashboard → Settings → [Advanced](https://manage.auth0.com/dashboard/#/tenant/advanced)** toggles:
+
+1. **Dynamic Client Registration** (`enable_dynamic_client_registration`). Consequences to plan for:
+   - DCR clients are **third-party applications** — they can only use **domain-level connections**, so
+     the **passwordless email connection must be promoted to domain-level** or Claude can't show the
+     magic-link login (R5).
+   - You **cannot set per-app client grants during registration**, so configure **default permissions
+     for third-party applications** on the MCP API up front, or DCR clients get no access.
+   - The `/oidc/register` endpoint is rate-limited (5 req/s) and gate-able via the tenant ACL — fine
+     for our volume.
+2. **Resource Parameter Compatibility Profile** (+ **Include Issuer in Authorization Responses**).
+   MCP clients (Claude) send the RFC 8707 **`resource`** param and **no `audience`**; with this
+   **off**, Auth0 ignores `resource` and issues an **opaque token** the RS can't validate. With it
+   **on**, Auth0 maps `resource` → the token's `aud`, which is what R2 checks. The MCP API's
+   identifier **must be an absolute URI** (we use `https://mcp.artifact-hub.example`) — required by
+   both RFC 8707 and the MCP spec. (If both `resource` and `audience` are sent, `audience` wins.)
+
+> Verify these are available on the tenant's plan (paid tier acceptable — see project decision) and
+> re-apply them on **both** `ArtifactHub-Dev` and `ArtifactHub-Prod`.
 
 **Token validation is shared middleware** (same JWKS/issuer/expiry logic) used by both adapters,
 parameterised by the **expected audience** per endpoint. It resolves the Auth0 `sub` to a local
@@ -75,10 +102,13 @@ MCP client = Claude Desktop; Resource Server (RS) = our `/mcp`; Authorization Se
 
 **Registration (first time only)**
 5. Claude **self-registers** via **Dynamic Client Registration** (RFC 7591) → gets a `client_id`.
+   *(Requires the DCR tenant toggle; see Auth0 tenant config above.)*
 
 **Authorization**
 6. Claude runs **Authorization Code + PKCE**, opening the **system browser** to Auth0's
    `authorize` endpoint with a **resource indicator** (RFC 8707) naming our MCP resource.
+   *(Auth0 honours `resource` only with the Resource Parameter Compatibility Profile enabled;
+   see Auth0 tenant config above — otherwise the token comes back opaque and step 11 fails.)*
 7. The user authenticates via the **passwordless magic link** and consents. *(This is the intended
    UX — the magic-link login happens inside the OAuth popup/browser.)*
 8. Auth0 redirects to Claude's **loopback redirect URI** with an authorization code.

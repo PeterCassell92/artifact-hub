@@ -10,8 +10,9 @@ plus these CLI steps are the whole "infrastructure definition." Do the **first-t
 thereafter use the **routine deploy** section.
 
 **Prerequisites:** `flyctl` (`fly`) and `netlify` CLIs installed and logged in
-(`fly auth login`, `netlify login`); Docker (for local image builds); an Auth0 tenant; a Resend
-account.
+(`fly auth login`, `netlify login`); Docker (for local image builds); the **`ArtifactHub-Prod`**
+Auth0 tenant (Auth0 is one tenant per environment — see [`../architecture/02`](../architecture/02-auth-identity-and-admin.md) §1);
+a Resend account.
 
 ---
 
@@ -68,14 +69,34 @@ fly secrets set \
   --app artifact-hub-backend
 ```
 
-### 1.5 Auth0 (unchanged tenant, new origins)
+### 1.5 Auth0 — `ArtifactHub-Prod` tenant
 
-The Auth0 tenant itself is untouched by this migration — only the URLs and secrets change:
+Configure the **`ArtifactHub-Prod`** tenant (separate from `ArtifactHub-Dev`; full rationale + flow
+in [`02` §1](../architecture/02-auth-identity-and-admin.md)). Both OAuth roles live in this one tenant.
 
-- **Allowed Callback URLs / Allowed Web Origins / Allowed Logout URLs / CORS** → add the **Netlify**
-  SPA origin (e.g. `https://artifact-hub.netlify.app` or your custom domain).
-- The **MCP OAuth Resource Server** audience is unchanged; the Protected Resource Metadata now
-  advertises the **Fly** `/mcp` URL (`https://artifact-hub-backend.fly.dev/mcp`).
+**Role A — SPA login (OIDC + PKCE):**
+- **Allowed Callback URLs / Web Origins / Logout URLs / CORS** → the **Netlify** SPA origin
+  (e.g. `https://artifact-hub.netlify.app` or your custom domain). *(No localhost here — those belong
+  to `ArtifactHub-Dev`.)*
+- Create the two **APIs (audiences)**, identifiers as **absolute URIs**:
+  `AUTH0_API_AUDIENCE` (`/api/*`) and `AUTH0_MCP_AUDIENCE` (`/mcp`).
+
+**Role B — MCP resource server (verified Auth0 config; see [`02` §1.1](../architecture/02-auth-identity-and-admin.md)).**
+The Protected Resource Metadata advertises the **Fly** `/mcp` URL
+(`https://artifact-hub-backend.fly.dev/mcp`). On **Dashboard → Settings → Advanced**, enable:
+- ☐ **Dynamic Client Registration** — so Claude Code/Desktop self-register (RFC 7591).
+- ☐ **Resource Parameter Compatibility Profile** **+** **Include Issuer in Authorization Responses**
+  — so Auth0 maps the MCP client's RFC 8707 `resource` param to the token `aud` (**without this the
+  token is opaque and `/mcp` rejects every request**).
+
+And, because DCR clients are third-party apps:
+- ☐ **Promote the passwordless email connection to domain-level** (else the magic-link login can't
+  appear in Claude's OAuth popup).
+- ☐ Configure **default permissions for third-party applications** on the MCP API (per-app client
+  grants can't be set during registration).
+- ☐ **Disable open sign-up** on the passwordless connection (R1 — un-invited emails must not obtain a
+  token).
+
 - Set the Auth0 secrets on the app:
 
 ```bash

@@ -82,3 +82,6 @@ Thumbs.db
 # ── Misc caches ───────────────────────────────────────────────
 .cache/
 .eslintcache
+
+# Firecrawl scrape cache (web research)
+.firecrawl/
