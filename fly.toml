@@ -1,0 +1,44 @@
+# Fly.io config for the Artifact Hub backend (Express /api/* + Streamable-HTTP /mcp).
+# Deploy from the repo root: `fly deploy`. See docs/development/deploy-runbook.md and
+# docs/architecture/07-infrastructure-and-iac.md. Runtime secrets live in `fly secrets`
+# (DATABASE_URL, Tigris keys, Auth0, SMTP_PASS) — never in this file.
+
+app = "artifact-hub-backend"
+primary_region = "lhr"   # keep app + Fly Managed Postgres + Tigris in the same region
+
+[build]
+  # Root build context (the Dockerfile resolves the yarn workspace incl. packages/contracts).
+  dockerfile = "apps/backend/Dockerfile"
+
+[deploy]
+  # Apply pending migrations before new machines take traffic (expand/contract migrations only).
+  release_command = "yarn workspace backend db:deploy"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1   # warm floor so there's no cold start on the /mcp OAuth path
+
+  # The ALB request-count-per-target analogue: bring up more machines past the soft limit.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  # Fly shifts traffic to a machine only once /readyz passes (DB reachable + migrations applied).
+  [[http_service.checks]]
+    method = "get"
+    path = "/readyz"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

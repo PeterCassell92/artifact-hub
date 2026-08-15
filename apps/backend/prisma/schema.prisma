@@ -141,7 +141,7 @@ model Artifact {
   description    String?
   fileName       String
   contentType    String // MIME
-  s3Key          String  @unique
+  storageKey     String  @unique // object key in the Tigris (S3-compatible) bucket
   sizeBytes      BigInt
   checksumSha256 String?
 
@@ -297,7 +297,7 @@ model AdminAuditLog {
   @@index([targetType, targetId])
 }
 
-// Transactional outbox — reliable external side-effects (SES email, Auth0 provisioning).
+// Transactional outbox — reliable external side-effects (Resend email, Auth0 provisioning).
 model OutboxEvent {
   id             String    @id @default(uuid())
   type           String // e.g. "invitation.send"

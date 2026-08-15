@@ -13,7 +13,7 @@ artifacts conversationally.
 ## 1. Transport & endpoint
 
 - Single endpoint **`/mcp`** over **Streamable HTTP** (not SSE — deprecated for new servers).
-- Stateless-friendly, so it scales behind the ALB across many Fargate replicas.
+- Stateless-friendly, so it scales behind `fly-proxy` across many Fly machines.
 - Built with the **MCP TypeScript SDK** (`StreamableHTTPServerTransport`) mounted on the same
   Express app that serves `/api/*`.
 
@@ -51,7 +51,8 @@ content comes back through MCP itself.
   **metadata-only (~a few KB)** — never raw file bytes.
 - **Resources** are for *files and large content*: each artifact is a stable resource URI
   `artifact://<id>` (blob + mimeType). The client reads it on demand; the server authorizes via
-  token and pulls bytes from S3 **server-side via the IAM role**.
+  token and pulls bytes from Tigris **server-side via GetObject with the held scoped key (AWS SDK
+  against Tigris)**.
 - **Download to disk is host-mediated**: the human clicks *save* in Claude Desktop; the host
   writes the file. No silent agent-to-disk.
 - **Presigned URLs stay OUT of the MCP path** (browser/download only). The resource URI
@@ -86,8 +87,9 @@ Notes:
   Desktop"), `format`, plus free-form `metadata` — per [`../models/artifact.md`](../models/artifact.md).
   The backend derives `fileExtension`, `sizeBytes`, `checksumSha256`.
 - **Upload path** for `publish_artifact`: hand the client a **presigned PUT** so bytes go
-  straight to S3 out-of-band (`bytesRef` correlates the upload), *or* accept small content
+  straight to Tigris out-of-band (`bytesRef` correlates the upload), *or* accept small content
   inline for tiny artifacts. Large bytes never transit a tool argument/result.
+
 - `list_shared_with_me` directly satisfies *"Which artifacts have been shared with me in the
   last 24 hours?"* — pass `sinceHours: 24`. It returns the full set (for the agent to reason
   over) but renders only the first 10 rows as the required markdown table.
@@ -107,7 +109,7 @@ Notes:
 ## 5. Resources
 
 - **`artifact://<id>`** — the artifact body. On `resources/read`: validate token → `canView` →
-  server-side S3 `GetObject` via IAM role → return `{ blob(base64), mimeType }`. This is the
+  server-side `GetObject` via the held scoped key (AWS SDK against Tigris) → return `{ blob(base64), mimeType }`. This is the
   **only** way an agent obtains file bytes. Each read **records an AccessEvent** (`route=mcp`,
   `action=download`, `decision=allowed|denied`) — the agent access route in the audit trail
   (see [`../models/access-event.md`](../models/access-event.md)).

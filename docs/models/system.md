@@ -8,7 +8,7 @@ in [`access-event.md`](access-event.md) (artifact access).
 
 ## OutboxEvent (transactional outbox)
 
-Backs reliable delivery of external side-effects (SES email, Auth0 provisioning) without an
+Backs reliable delivery of external side-effects (Resend email, Auth0 provisioning) without an
 agent/state-graph framework. See `../architecture/02-auth-identity-and-admin.md` §6.
 
 | Field | Type | Req | Meaning |

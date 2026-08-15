@@ -29,5 +29,7 @@ ENV NODE_ENV=production
 RUN corepack enable
 COPY --from=build /repo /repo
 EXPOSE 3000
-# migrate deploy is run as a separate pipeline step (08); container just serves.
+# The full /repo (incl. node_modules with the Prisma CLI + prisma/schema.prisma + prisma/migrations)
+# is present, so Fly's release_command can run `yarn workspace backend db:deploy` (prisma migrate
+# deploy) before traffic shifts (docs 07/08). The container itself just serves.
 CMD ["node", "apps/backend/dist/index.js"]

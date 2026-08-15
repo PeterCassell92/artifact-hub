@@ -20,7 +20,7 @@ Related: [`../frontend/02-filtering-and-search.md`](../frontend/02-filtering-and
 | `fileName` | string | yes | Original filename | search |
 | `contentType` | string (MIME) | yes | e.g. `application/pdf` | yes (filetype) |
 | `fileExtension` | string | derived | e.g. `.pdf`, `.mmd` — derived from fileName/contentType | yes (filetype) |
-| `s3Key` | string | yes | Location in the private S3 bucket | — |
+| `storageKey` | string | yes | Object key in the private Tigris (S3-compatible) bucket | — |
 | `sizeBytes` | bigint | yes | File size | yes (range) |
 | `checksumSha256` | string | no | Content hash (integrity / dedupe signal) | — |
 | `createdAt` / `publishedAt` | timestamp | yes | Publication date | yes (date range) |

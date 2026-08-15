@@ -45,7 +45,7 @@ It is usable two ways over the same core logic:
 5. **The backend contains no LLM calls.** All logic is deterministic. The only model in the
    loop is the *client's* (e.g. Claude Desktop).
 6. **Files never pass through an agent's context as tool results.** Agent file delivery is
-   via MCP **Resources**; presigned S3 URLs are confined to the browser/download path.
+   via MCP **Resources**; presigned object-store URLs are confined to the browser/download path.
 7. **Authentication is passwordless (magic link).** No passwords anywhere — every human signs in
    with an emailed magic link. We already run an email service, so we reuse it and avoid all
    password management.
@@ -67,12 +67,12 @@ It is usable two ways over the same core logic:
               ▼                         ▼
         ┌───────────────────────────────────────────┐
         │            Artifact Hub (this system)      │
-        │   SPA (S3+CloudFront)  +  Backend (ECS)    │
+        │    SPA (Netlify)   +   Backend (Fly.io)    │
         └───────────────────────────────────────────┘
               │            │            │           │
               ▼            ▼            ▼           ▼
           ┌───────┐   ┌────────┐   ┌───────┐   ┌───────┐
-          │ Auth0 │   │  RDS   │   │  S3   │   │  SES  │
+          │ Auth0 │   │  Fly   │   │Tigris │   │Resend │
           │ (IdP) │   │Postgres│   │(files)│   │(email)│
           └───────┘   └────────┘   └───────┘   └───────┘
 ```
@@ -80,27 +80,27 @@ It is usable two ways over the same core logic:
 ## 4. System shape (C4 — Container)
 
 ```
-   Browser SPA ──────▶ CloudFront ──▶ S3 (static site)
+   Browser SPA ──────▶ Netlify edge (CDN + TLS) ──▶ apps/frontend/dist
         │ XHR /api/*
         ▼
    ┌──────────────────────────────────────────────────────┐
-   │  Application Load Balancer (TLS)                       │
+   │  fly-proxy (Anycast edge, TLS)                         │
    └───────────────┬──────────────────────────────────────┘
                    ▼
    ┌──────────────────────────────────────────────────────┐
-   │  Backend container (Node + TypeScript, Express)        │  ECS Fargate
+   │  Backend container (Node + TypeScript, Express)        │  Fly machines
    │                                                        │  (autoscaled,
-   │   adapters/http   →  /api/*   (SPA + admin)            │   many replicas)
+   │   adapters/http   →  /api/*   (SPA + admin)            │   many microVMs)
    │   adapters/mcp    →  /mcp     (Streamable HTTP)        │
    │            \         /                                 │
    │             core (domain: artifacts, authz, sharing,   │
    │                    comments, invitations, groups)      │
    └───────┬───────────────┬───────────────┬───────────────┘
-           │ Prisma        │ IAM role      │ Management API / OIDC
+           │ Prisma        │ scoped key    │ Management API / OIDC
            ▼               ▼               ▼
-      RDS Postgres      S3 (private)     Auth0        + SES (email)
-      (private subnet)  Block Public     (one IdP,      (invitations)
-                        Access on        two roles)
+      Fly Managed       Tigris (private)  Auth0        + Resend (email)
+      Postgres          S3-compatible;    (one IdP,      (invitations)
+      (private net)     own domain=sandbox two roles)
 ```
 
 The backend is a **modular monolith**: one deployable serving both `/api/*` and `/mcp`,
@@ -115,11 +115,11 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 1 | Backend shape | Modular monolith (API + MCP, shared `core`) | DECIDED | 01/05/06 |
 | 2 | Backend framework | **Express** + zod validation | DECIDED | 06 |
 | 3 | MCP transport | Streamable HTTP, single `/mcp` (not SSE) | DECIDED | 05 |
-| 4 | Backend host | ECS Fargate + ALB (autoscaled) | DECIDED | 07 |
-| 5 | Frontend host | S3 + CloudFront (AWS-native) | DECIDED | 07 |
-| 6 | Database | RDS PostgreSQL, private subnet | DECIDED | 04/07 |
+| 4 | Backend host | **Fly.io** (machines + `fly-proxy`, autoscaled) | DECIDED | 07 |
+| 5 | Frontend host | **Netlify** (CDN + TLS) | DECIDED | 07 |
+| 6 | Database | **Fly Managed Postgres** (private network) | DECIDED | 04/07 |
 | 7 | ORM / migrations | **Prisma** (`migrate dev`/`deploy`/`db seed`) | DECIDED | 04 |
-| 8 | Object storage | S3, private (Block Public Access) | DECIDED | 07 |
+| 8 | Object storage | **Tigris** (S3-compatible), private bucket | DECIDED | 07 |
 | 9 | Identity provider | Auth0 (OIDC humans + MCP OAuth RS) | DECIDED | 02 |
 | 9b | Human auth method | **Passwordless magic link** (all users incl. admins) | DECIDED | 02 |
 | 10 | Anonymous access | **Not allowed** — all viewers authenticated | DECIDED | 03 |
@@ -130,7 +130,7 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 15 | Groups | App-managed in Postgres, admin-assigned, immutable | DECIDED | 02/04 |
 | 16 | Admin area | `/admin` + `/admin/users`, backend admin routes | DECIDED | 02/06 |
 | 16b | Admin promote/demote | Admins can promote/demote users; last-admin guard | DECIDED | 02/06 |
-| 17 | Email | AWS SES (invitations) | DECIDED | 02/07 |
+| 17 | Email | **Resend** (SMTP, invitations) | DECIDED | 02/07 |
 | 18 | Initial admins | Seeded from `INITIAL_ADMIN_EMAILS` (idempotent) | DECIDED | 02 |
 | 19 | Comments | Any viewer reads; commenting requires auth | DECIDED | 03/06 |
 | 20 | MCP file delivery | Resources (`artifact://<id>`); tools metadata-only | DECIDED | 05 |
@@ -145,13 +145,13 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 29 | Publishing | **MCP-only** — no upload/publish UI in the SPA | DECIDED | 05, frontend/ |
 | 30 | Access auditing | `AccessEvent` per view/download across ui/share_link/mcp | DECIDED | 04, models/ |
 | 31 | Frontend scope | Consume/manage only (My Artifacts, Shared, filters/search) | DECIDED | frontend/ |
-| 32 | Dev email | MailCatcher (Docker) in dev; SES in prod | DECIDED | development/ |
+| 32 | Dev email | MailCatcher (Docker) in dev; Resend in prod | DECIDED | development/ |
 | 33 | Frontend stack | React + Redux Toolkit + Tailwind; modular tested components | DECIDED | development/, 09 |
 | 34 | Notification pattern | **No `window.alert`/`confirm`/`prompt`, no toasts**; in-DOM state-driven | DECIDED | development/ |
 | 35 | MCP auth flow | OAuth 2.1 (PRM + DCR + PKCE + resource indicator); magic link in popup | DECIDED | 02 §1.1 |
 | 36 | MCP token rules | Deny-if-not-provisioned, audience-bound, identity-only, disabled-blocked | DECIDED | 02 §1.1 |
 | 37 | Admin over MCP | **Not allowed** — no admin MCP tools; `/api/admin/*` rejects MCP tokens | DECIDED | 02/05/06 |
-| 38 | Secrets strategy | Runtime → AWS Secrets Manager; CI → GitHub+OIDC (minimal); dev → `.env` | DECIDED | 07 |
+| 38 | Secrets strategy | Runtime → `fly secrets`; frontend → Netlify env (`VITE_*`); dev → `.env` | DECIDED | 07 |
 
 Items that were **OPEN** in the WIP doc (backend host, frontend host, authz model, HTML
 sandboxing) are now all closed above.
@@ -203,7 +203,7 @@ Every requirement maps to at least one design doc **and** one BDD scenario. No o
 | Rich artifact metadata (drives filters) | 04, 05, 06, models/artifact | publisher-publish-with-policy |
 | Dev email catcher (MailCatcher) | development/email-catcher | (dev tooling) |
 | High concurrency | 07 | (non-functional; load-tested, see 09) |
-| Cost optimisation at scale (S3 lifecycle) | 07 | (non-functional) |
+| Cost optimisation at scale (Tigris auto-tiering, free egress) | 07 | (non-functional) |
 | Observability | 10 | (non-functional) |
 
 ---

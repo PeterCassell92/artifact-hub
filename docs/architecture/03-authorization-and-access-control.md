@@ -106,8 +106,8 @@ still sees it in "My Artifacts."
   1. Resolve `token → artifact_id` (reject unknown/removed tokens).
   2. Require the caller to be **authenticated** (redirect to login if not).
   3. Run `canView(user, artifact)` against the **current** policy.
-  4. If allowed and the caller wants the bytes, mint a **short-lived (~60s) presigned S3 URL**
-     and redirect/stream; otherwise `403`.
+  4. If allowed and the caller wants the bytes, mint a **short-lived (~60s) presigned URL**
+     (Tigris, S3-compatible) and redirect/stream; otherwise `403`.
 - The link never encodes permission and never bypasses the policy. Tokens exist so URLs are
   clean and non-enumerable (not sequential ids), and so a link can be individually retired.
 
@@ -117,8 +117,8 @@ still sees it in "My Artifacts."
 
 | Path | Who | Mechanism | Notes |
 |------|-----|-----------|-------|
-| Browser download | Humans | `canView` → **~60s presigned S3 URL** | Bucket stays private; presigned URL is the only read path. Pin `ResponseContentType` / `ResponseContentDisposition` per redemption so PDFs open inline, images render, HTML serves correctly. |
-| Agent fetch | MCP clients | **MCP Resource** `artifact://<id>` → server-side S3 read via **IAM role** → bytes returned as blob+mime | Presigned URLs are **never** used here. Tool results stay metadata-only. See `05`. |
+| Browser download | Humans | `canView` → **~60s presigned URL** (Tigris, S3-compatible) | Bucket stays private; presigned URL is the only read path. Pin `ResponseContentType` / `ResponseContentDisposition` per redemption so PDFs open inline, images render, HTML serves correctly. |
+| Agent fetch | MCP clients | **MCP Resource** `artifact://<id>` → server-side GetObject via the held scoped key (AWS SDK against Tigris) → bytes returned as blob+mime | Presigned URLs are **never** used here. Tool results stay metadata-only. See `05`. |
 
 This separation means the presigned URL's short expiry never collides with agent timing, and
 raw bytes never enter an agent's context window.
@@ -129,8 +129,8 @@ raw bytes never enter an agent's context window.
 
 Hosting arbitrary AI-generated HTML is an app-specific risk. Rule:
 
-- HTML artifacts are **always** served from a **dedicated sandbox origin** (a separate
-  storage/CloudFront origin or subdomain), **never** inlined into the app origin.
+- HTML artifacts are **always** served from a **dedicated sandbox origin** (the object store's
+  own domain or a dedicated sandbox subdomain), **never** inlined into the app origin.
 - Serve with a restrictive **`Content-Security-Policy`** and `X-Content-Type-Options: nosniff`.
 - This isolates any script in the artifact from the app's cookies/session/DOM.
 
@@ -144,7 +144,7 @@ Detailed headers live in `06` (§ HTML sandboxing).
 ```
 Owner ─publish(file, {audience, expiry})─▶ Backend
   Backend: create artifact row + policy (audience_type, allowed users/groups, expires_at)
-           store file in S3 (private) via presigned PUT / server-side put
+           store file in Tigris (private bucket) via presigned PUT / server-side put
   Backend ─201 {artifactId}─▶ Owner
 ```
 
@@ -153,7 +153,7 @@ Owner ─publish(file, {audience, expiry})─▶ Backend
 User ─GET /s/<token>─▶ Backend
   resolve token→artifact ; require auth ; canView(user, artifact)?
      ├─ DENY ─▶ 403
-     └─ ALLOW ─▶ mint ~60s presigned URL ─▶ 302 redirect ─▶ S3 streams bytes
+     └─ ALLOW ─▶ mint ~60s presigned URL ─▶ 302 redirect ─▶ the object store streams bytes
 ```
 
 ### Revoke, then owner views

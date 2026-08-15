@@ -2,7 +2,7 @@
 
 *Status: dev tooling. Related: [`../architecture/02-auth-identity-and-admin.md`](../architecture/02-auth-identity-and-admin.md)
 (invitations + magic-link auth both send email), [`../architecture/07-infrastructure-and-iac.md`](../architecture/07-infrastructure-and-iac.md)
-(SES in prod).*
+(Resend in prod).*
 
 Because both **invitations** and **magic-link sign-in** send real email, local dev needs somewhere
 safe to send to. We use **[MailCatcher](https://mailcatcher.me/)** — a tiny Docker service that
@@ -41,8 +41,10 @@ Bring it up with the rest of the dev stack (`docker compose up -d`), then open
 Our email sending goes through a small **email-provider abstraction** in the backend (driven by the
 transactional outbox, see `02` §6). Select the transport by environment:
 
-- **dev** → **SMTP transport (nodemailer)** pointed at MailCatcher.
-- **prod** → **AWS SES** (`07`).
+- **dev** → **SMTP transport (nodemailer)** pointed at MailCatcher (no auth).
+- **prod** → **Resend** over the **same SMTP transport** (`07`) — auth via `SMTP_USER=resend` +
+  `SMTP_PASS=<Resend API key>`. There is no separate SES/`ses` transport; only the SMTP host/auth
+  differ between dev and prod.
 
 Dev `.env` (git-ignored; commit a `.env.example`):
 
@@ -54,16 +56,20 @@ SMTP_SECURE=false          # MailCatcher speaks plain SMTP, no TLS/auth
 EMAIL_FROM="Artifact Hub <no-reply@artifact-hub.local>"
 ```
 
-Prod (from Secrets Manager, not committed):
+Prod (from `fly secrets`, not committed):
 
 ```dotenv
-EMAIL_TRANSPORT=ses
-AWS_REGION=...
-EMAIL_FROM="Artifact Hub <no-reply@yourdomain>"
+EMAIL_TRANSPORT=smtp
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=resend
+SMTP_PASS=<RESEND_API_KEY>       # a fly secret
+EMAIL_FROM="Artifact Hub <no-reply@yourdomain>"   # must be a Resend-verified domain
 ```
 
-The code path is identical — only the transport differs — so invitation and magic-link emails are
-exercised end-to-end in dev without a real mailbox.
+The code path is identical — the transport is **SMTP** in both dev and prod; only the host/auth
+differ — so invitation emails are exercised end-to-end in dev without a real mailbox.
 
 ## Typical dev flow
 

@@ -42,7 +42,7 @@ The REST API is the HTTP adapter that serves the SPA (including the admin area) 
 | `POST /api/artifacts/:id/finalize` | (MCP publish path) Confirm upload complete (size/mime/checksum recorded) | owner |
 | `GET /api/artifacts/:id` | Artifact detail (metadata + policy + can-I-view). **Records an AccessEvent** (`route=ui`, `view`) | `canView` |
 | `GET /api/artifacts` | List artifacts visible to me (filters: `mine`, `sharedWithMe`, `sinceHours`, plus search/facets — see frontend/02) | per-item `canView` |
-| `GET /api/artifacts/:id/download` | Mint ~60s presigned S3 URL and `302` redirect. **Records an AccessEvent** (`route=ui`, `download`) | `canView` |
+| `GET /api/artifacts/:id/download` | Mint ~60s presigned URL and `302` redirect. **Records an AccessEvent** (`route=ui`, `download`) | `canView` |
 | `PUT /api/artifacts/:id/policy` | Change audience + expiry (**revocation**). Writes `AdminAuditLog` `policy.update` | owner (`canManagePolicy`) |
 | `GET /api/artifacts/:id/access-events` | Access history for an artifact (audit trail) | owner (or admin) |
 | `GET /api/artifacts/:id/relationships` | List related artifacts | `canView` |
@@ -80,7 +80,7 @@ decides (see `03` §5). Unauthenticated redeemers are redirected to login, then 
 | Method & path | Purpose |
 |---------------|---------|
 | `GET /api/admin/users` | List users (status, role, groups) |
-| `POST /api/admin/invitations` | Invite `{ email, role, groupIds[] }` → creates invite + outbox SES send |
+| `POST /api/admin/invitations` | Invite `{ email, role, groupIds[] }` → creates invite + outbox Resend send |
 | `POST /api/admin/users/:id/groups` | Corrective group change (audit-logged) |
 | `POST /api/admin/users/:id/role` | Change role |
 | `POST /api/admin/users/:id/disable` | Deactivate a user |
@@ -98,7 +98,7 @@ decides (see `03` §5). Unauthenticated redeemers are redirected to login, then 
 | Method & path | Purpose |
 |---------------|---------|
 | `GET /healthz` | Liveness (process up) |
-| `GET /readyz` | Readiness (DB reachable, migrations applied) — used by ALB target group |
+| `GET /readyz` | Readiness (DB reachable, migrations applied) — used by the Fly health check |
 
 ---
 
@@ -107,11 +107,11 @@ decides (see `03` §5). Unauthenticated redeemers are redirected to login, then 
 ```
 SPA ─POST /api/artifacts {metadata, policy}─▶ Backend
      ◀─ { artifactId, uploadUrl (presigned PUT, ~60s) }
-SPA ─PUT bytes ─────────────────────────────▶ S3   (direct, bypasses backend)
+SPA ─PUT bytes ─────────────────────────────▶ Tigris   (direct, bypasses backend)
 SPA ─POST /api/artifacts/:id/finalize ───────▶ Backend (record size/mime; ready)
 ```
 
-Bytes go straight to S3; the backend never buffers large files. The MCP `publish_artifact`
+Bytes go straight to Tigris; the backend never buffers large files. The MCP `publish_artifact`
 uses the same mechanism.
 
 ---
@@ -120,8 +120,8 @@ uses the same mechanism.
 
 When serving/rendering an HTML artifact:
 
-- Serve from a **dedicated sandbox origin** (separate CloudFront distribution / subdomain over
-  the S3 origin), never the app origin.
+- Serve from a **dedicated sandbox origin** (the object store's own domain / a sandbox subdomain
+  over the Tigris origin), never the app origin.
 - Response headers:
   - `Content-Security-Policy: default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox`
     (tuned per need; start restrictive).
@@ -134,7 +134,7 @@ When serving/rendering an HTML artifact:
 
 ## 10. CORS
 
-The SPA (CloudFront origin) and the API (ALB origin) are separate origins → configure CORS on
+The SPA (**Netlify** origin) and the API (**Fly** origin) are separate origins → configure CORS on
 `/api/*` to allow the SPA origin, credentials, and the needed methods/headers. `/mcp` is called
 by MCP clients (not browsers) and is not CORS-scoped the same way.
 

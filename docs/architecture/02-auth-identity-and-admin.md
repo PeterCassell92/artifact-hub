@@ -13,9 +13,18 @@ Covers **who** a caller is (authentication) and **how users are onboarded**. Aut
 Auth0 is the single identity provider. It serves two distinct roles against the **same**
 user directory (each user keyed by Auth0 subject `idp_sub`):
 
+> **One tenant per environment.** "Single IdP" means one *product*, not one tenant — Auth0 is split
+> into a **`ArtifactHub-Dev`** tenant and a **`ArtifactHub-Prod`** tenant, so dev testing never
+> touches production users, apps, or connections. **Both OAuth roles (A and B) live together in one
+> tenant *within* an environment** — the split is across environments, not across roles. Each tenant
+> has its own domain, SPA app (client id), API audiences, callback/logout URLs, and Management API
+> creds; the `AUTH0_*` / `VITE_AUTH0_*` env values differ per environment accordingly. When setting
+> up **`ArtifactHub-Dev`**, only the **localhost** callback/logout/web-origin URLs are needed
+> (`http://localhost:5173`); the Netlify/custom-domain URLs belong to **`ArtifactHub-Prod`**.
+
 ### Role A — humans logging into the SPA (standard OIDC, **passwordless / magic link**)
 - **No passwords anywhere.** Every human — members *and* admins — logs in with a **magic link**
-  (passwordless email). We already run an email service (SES) for invitations, so we reuse it for
+  (passwordless email). We already run an email service (Resend) for invitations, so we reuse it for
   auth and avoid all password storage/reset/rotation burden.
 - The SPA runs the **Authorization Code + PKCE** flow against Auth0; Auth0's **passwordless
   (email link)** connection is the credential — the user enters their email, receives a one-time
@@ -46,7 +55,8 @@ creates a user.** If there is no matching `users` row, or `status != active`, th
 
 ### Sequencing
 Build Role A first (app login + protected API), then layer the MCP resource-server metadata
-onto the same Auth0 tenant.
+onto the same Auth0 tenant (the environment's tenant — both roles share it; see the per-environment
+tenant note above).
 
 ---
 
@@ -160,7 +170,7 @@ Backend: create `invitations` row
    • record email, role, groupIds, invited_by
    │  (transactional outbox row enqueued)
    ▼
-SES: send email with link  https://<app>/accept-invite?token=<token>
+Resend: send email with link  https://<app>/accept-invite?token=<token>
    ▼
 Invitee opens link → SPA accept page (confirms name; NO password to set)
    ▼
@@ -182,8 +192,8 @@ Notes:
 - The **invitation is the source of truth** for role + group assignment.
 - Token: store only `token_hash` (e.g. SHA-256); the raw token exists only in the emailed link.
 - Re-invite / resend is idempotent per pending invitation; accepting is single-use.
-- Auth0 user creation uses the **Management API** with credentials from Secrets Manager. The
-  cross-service hop (Auth0 + SES) is made reliable by the **transactional outbox + idempotency**
+- Auth0 user creation uses the **Management API** with credentials from `fly secrets`. The
+  cross-service hop (Auth0 + Resend) is made reliable by the **transactional outbox + idempotency**
   pattern (see §6), not an agentic framework.
 
 ---
@@ -193,12 +203,12 @@ Notes:
 Admins invite everyone — so the **first** admins are seeded by infrastructure, not invited
 in-app.
 
-- Config **`INITIAL_ADMIN_EMAILS`** — a **comma-separated list** — supplied as a Terraform var
-  and stored in **Secrets Manager**.
+- Config **`INITIAL_ADMIN_EMAILS`** — a **comma-separated list** — supplied as a `fly secret`
+  (dev: `.env`).
 - On first deploy, an **idempotent `prisma db seed`** step:
   1. Seeds the initial groups (e.g. `Product`, `Development`).
   2. Creates **one admin `users` row per listed email** (`role=admin`, `status=invited`).
-  3. Fires the same **SES invitation** to each, so each seed admin signs in via magic link
+  3. Fires the same **Resend invitation** to each, so each seed admin signs in via magic link
      exactly like any other user (no password).
 - **Idempotent**: re-running the seed skips emails/groups that already exist, so the step is
   safe to leave in the deploy pipeline.
@@ -209,12 +219,12 @@ in-app.
 
 ## 6. Cross-service reliability — transactional outbox + idempotency
 
-Invitation accept and publish both touch external systems (Auth0, SES, S3). To avoid partial
+Invitation accept and publish both touch external systems (Auth0, Resend, Tigris). To avoid partial
 failures without a heavyweight orchestrator:
 
 - Write the domain change **and** an `outbox` row in the **same DB transaction**.
 - A worker (in-process interval or a small poller) drains the outbox and performs the external
-  call (send SES email, call Auth0), marking the row done on success, retrying with backoff on
+  call (send email via Resend, call Auth0), marking the row done on success, retrying with backoff on
   failure.
 - External calls carry an **idempotency key** (e.g. invitation id) so retries don't double-send
   or double-create.
@@ -259,8 +269,8 @@ Backing API routes are specified in `06` (`/api/admin/*`). All admin mutations a
   API-audience tokens; `/api/admin/*` additionally requires `role=admin` — MCP tokens can't reach it.
 - **No admin over MCP (R3)**: user-management is human-UI only; no admin MCP tools exist.
 - Invitation tokens: hashed at rest, single-use, time-boxed.
-- Auth0 Management API credentials and the SES sender identity live in **Secrets Manager**;
-  the ECS task role grants least-privilege access.
+- Auth0 Management API credentials and the Resend API key live in **`fly secrets`**; Fly injects
+  them into the machine (no cloud IAM role).
 - **Passwordless**: no password field in our DB and none in Auth0 — sign-in is via magic link, so
   there is no password store, reset flow, or credential-stuffing surface. Magic-link tokens are
   short-lived and single-use (handled by Auth0's passwordless connection).

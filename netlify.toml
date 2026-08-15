@@ -1,0 +1,18 @@
+# Netlify config for the Artifact Hub SPA (apps/frontend). Monorepo-aware: build the shared
+# contracts package first, then the Vite SPA, and publish its dist/. See
+# docs/development/deploy-runbook.md. Public VITE_* build vars (VITE_API_BASE_URL, VITE_AUTH0_*)
+# are set in the Netlify UI/CLI, not here.
+
+[build]
+  # Run from the repo root so yarn workspaces resolve.
+  command = "yarn install --immutable && yarn workspace contracts build && yarn workspace frontend build"
+  publish = "apps/frontend/dist"
+
+[build.environment]
+  NODE_VERSION = "20.18.0"   # matches the Volta pin in the root package.json
+
+# SPA fallback: serve index.html for client-side routes so deep-link refreshes work.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

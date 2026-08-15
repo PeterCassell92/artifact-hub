@@ -11,7 +11,7 @@ export function createApp(): Express {
   // Liveness: process is up.
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-  // Readiness: DB reachable (ALB target-group check; docs/architecture/06 §7).
+  // Readiness: DB reachable (Fly health check; docs/architecture/06 §7).
   app.get("/readyz", async (_req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;

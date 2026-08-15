@@ -51,7 +51,7 @@ Pure functions in `core`, no I/O, exhaustive:
 
 - Spin up an **ephemeral Postgres** (Testcontainers), run `prisma migrate deploy`, seed.
 - Drive Express routes with **supertest** (see §6); stub Auth0 token validation with signed test
-  JWTs; stub SES/Auth0 Management API at the boundary.
+  JWTs; stub Resend/Auth0 Management API at the boundary.
 - Cover: publish → finalize → view/download authz, comment read/write permission, policy update
   (revocation) killing a share-link redemption, admin invite creating an outbox row, invitation
   accept provisioning user + immutable groups, `sharedWithMe&sinceHours=24` results.
@@ -115,7 +115,7 @@ it("denies view when not in audience", async () => {
 - **No real network / no fixed port** — it binds the app directly, so tests are fast and can run
   in parallel in CI (Testcontainers provides the DB; supertest provides the HTTP driver).
 - **First-class Jest integration** — returns promises, works with `async/await`, plays with our
-  JWT/SES/Auth0 boundary stubs.
+  JWT/Resend/Auth0 boundary stubs.
 - **Mainstream + Express-native** — it is the de-facto standard for Express integration testing
   (consistent with our preference for well-known tooling). No niche alternative offers a decisive
   advantage for this scenario.

@@ -3,7 +3,7 @@ import { z } from "zod";
 /** Parsed, validated environment. Fail fast at boot if misconfigured. */
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.coerce.number().default(3000),
+  PORT: z.coerce.number().default(3081), // local dev default (avoids a common :3000 clash); prod pins PORT in fly.toml
   DATABASE_URL: z.string().url(),
 
   INITIAL_ADMIN_EMAILS: z.string().default(""),
@@ -12,16 +12,22 @@ const EnvSchema = z.object({
   AUTH0_API_AUDIENCE: z.string().min(1),
   AUTH0_MCP_AUDIENCE: z.string().min(1),
 
-  EMAIL_TRANSPORT: z.enum(["smtp", "ses"]).default("smtp"),
+  // Email is SMTP everywhere: MailCatcher (no auth) in dev, Resend (auth) in prod. No `ses` branch.
+  EMAIL_TRANSPORT: z.enum(["smtp"]).default("smtp"),
   SMTP_HOST: z.string().default("localhost"),
   SMTP_PORT: z.coerce.number().default(1025),
   SMTP_SECURE: z
     .string()
     .default("false")
     .transform((v) => v === "true"),
+  SMTP_USER: z.string().optional(), // Resend: "resend"; unset for MailCatcher
+  SMTP_PASS: z.string().optional(), // Resend API key (a fly secret); unset for MailCatcher
   EMAIL_FROM: z.string().default("Artifact Hub <no-reply@artifact-hub.local>"),
 
-  S3_BUCKET: z.string().min(1),
+  // Object storage — Tigris (S3-compatible). `fly storage create` injects these; AWS SDK v3 reads
+  // AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_REGION + the custom endpoint automatically.
+  BUCKET_NAME: z.string().min(1),
+  AWS_ENDPOINT_URL_S3: z.string().url(),
   AWS_REGION: z.string().min(1),
 });
 

@@ -3,8 +3,9 @@
 *Status: design. Related: [02](02-auth-identity-and-admin.md),
 [03](03-authorization-and-access-control.md), [06](06-api-design.md).*
 
-All metadata lives in RDS PostgreSQL (private subnet). Files live in S3 (`s3_key` references
-only). The schema is expressed with **Prisma**; migrations are managed by Prisma Migrate.
+All metadata lives in **Fly Managed Postgres** (private network). Files live in a private
+**object store (Tigris, S3-compatible)** — the DB holds `storageKey` references only. The schema is
+expressed with **Prisma**; migrations are managed by Prisma Migrate.
 
 > **Source of truth for modelling is now [`../models/`](../models/).** That folder holds the
 > field-level, implementation-agnostic model definitions (the full artifact **metadata
@@ -112,7 +113,7 @@ model Artifact {
   description   String?
   fileName      String
   contentType   String                        // MIME
-  s3Key         String       @unique
+  storageKey    String       @unique           // object key in the Tigris (S3-compatible) bucket
   sizeBytes     BigInt
   checksumSha256 String?
   // ── classification metadata (drives frontend filters; see ../models/artifact.md) ──
@@ -292,15 +293,15 @@ model AccessEvent {                            // artifact ACCESS audit trail (s
 
 ---
 
-## 5. S3 key layout
+## 5. Object-store key layout
 
 ```
-s3://<artifacts-bucket>/artifacts/<artifactId>/<original-filename>
+artifacts/<artifactId>/<original-filename>
 ```
 
-- Bucket has **Block Public Access** on; the only read path is a presigned URL (browser) or a
-  server-side IAM-role read (MCP resource). See `07` for lifecycle/storage-class escalation.
-- `s3Key` is stored on the artifact; content is immutable (no edit/delete in v1).
+- The **Tigris** bucket is **private by default**; the only read path is a presigned URL (browser)
+  or a server-side read via the held scoped key (MCP resource). See `07` for storage/auto-tiering.
+- `storageKey` is stored on the artifact; content is immutable (no edit/delete in v1).
 
 ---
 

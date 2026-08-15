@@ -1,18 +1,23 @@
-# Local dev services. See docs/development/email-catcher.md.
-#   Postgres    → the backend's DATABASE_URL
+# Local dev services. See docs/development/email-catcher.md and
+# docs/development/dev-and-testing-phases-guide.md.
+#   Postgres    → the backend's DATABASE_URL (host port 5440, so pgAdmin/psql don't clash with a
+#                 local 5432 Postgres)
 #   MailCatcher → catches backend-sent emails (invites/notifications); UI at http://localhost:1080
+#   MinIO       → S3-compatible object store; local stand-in for Tigris (prod). Console :9001
 services:
   postgres:
     image: postgres:16
     # Values come from the git-ignored root .env (docker compose auto-loads it).
     # Copy .env.example -> .env first. User/DB have non-secret dev defaults; the password
-    # must be set in .env. Real (prod) secrets live in AWS Secrets Manager (docs 07).
+    # must be set in .env. Real (prod) secrets live in `fly secrets` (docs 07).
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-artifacthub}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your root .env (copy .env.example)}
       POSTGRES_DB: ${POSTGRES_DB:-artifacthub}
     ports:
-      - "5432:5432"
+      # host:container — exposed on 5440 for host tools (pgAdmin/psql). The backend's DATABASE_URL
+      # must use port 5440 to match (see apps/backend/.env.example). Container stays 5432.
+      - "5440:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -29,5 +34,45 @@ services:
       - "1080:1080" # Web   — read caught mail at http://localhost:1080
     restart: unless-stopped
 
+  minio:
+    # Local S3-compatible object store — the dev stand-in for Tigris (prod, docs 07). The backend's
+    # AWS_* + AWS_ENDPOINT_URL_S3 (apps/backend/.env) point here. Credentials mirror that .env; the
+    # defaults below match apps/backend/.env.example so a plain `docker compose up` just works.
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-dev-access-key}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-dev-secret-key}
+    ports:
+      - "9000:9000" # S3 API — backend's AWS_ENDPOINT_URL_S3
+      - "9001:9001" # Web console — http://localhost:9001
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  createbuckets:
+    # One-shot: waits for MinIO, then creates the dev bucket (idempotent). Exits 0 when done, so it
+    # does not linger in `docker compose ps`. BUCKET_NAME must match apps/backend/.env.
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-dev-access-key}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-dev-secret-key}
+      BUCKET_NAME: ${BUCKET_NAME:-artifact-hub-dev}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}";
+        do echo 'waiting for minio...'; sleep 1; done;
+        mc mb --ignore-existing "local/$${BUCKET_NAME}";
+        echo "bucket ready: $${BUCKET_NAME}";
+
 volumes:
   pgdata:
+  miniodata:
