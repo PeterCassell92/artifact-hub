@@ -16,3 +16,22 @@ export async function listComments(artifactId: string): Promise<CommentView[]> {
     createdAt: c.createdAt.toISOString(),
   }));
 }
+
+/** Attributed to the caller; requires canView + authenticated (docs/architecture/03 §9). */
+export async function createComment(
+  artifactId: string,
+  authorId: string,
+  body: string,
+): Promise<CommentView> {
+  const comment = await prisma.comment.create({
+    data: { artifactId, authorId, body },
+    include: { author: { select: { name: true } } },
+  });
+
+  return {
+    id: comment.id,
+    authorName: comment.author.name ?? "Unknown",
+    body: comment.body,
+    createdAt: comment.createdAt.toISOString(),
+  };
+}

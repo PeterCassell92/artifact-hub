@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import type { ArtifactDetail, ArtifactSummary } from "contracts";
+import type { ArtifactDetail, ArtifactSummary, AudienceType } from "contracts";
 import { prisma } from "../db";
 import type { ArtifactPolicy } from "../core/authz";
 
@@ -85,4 +85,38 @@ export async function listOwnedArtifacts(
   const items = hasMore ? rows.slice(0, limit) : rows;
   const last = items.at(-1);
   return { items, nextCursor: hasMore && last ? last.id : null };
+}
+
+export interface UpdateArtifactPolicyInput {
+  audienceType: AudienceType;
+  expiresAt: Date | null;
+  allowedUserIds: string[];
+  allowedGroupIds: string[];
+  updatedById: string;
+}
+
+/** Revocation is just re-writing the policy (docs/architecture/03 §4) — no separate mechanism. */
+export async function updateArtifactPolicy(
+  artifactId: string,
+  input: UpdateArtifactPolicyInput,
+): Promise<void> {
+  await prisma.$transaction([
+    prisma.artifactAllowedUser.deleteMany({ where: { artifactId } }),
+    prisma.artifactAllowedGroup.deleteMany({ where: { artifactId } }),
+    prisma.artifact.update({
+      where: { id: artifactId },
+      data: {
+        audienceType: input.audienceType,
+        expiresAt: input.expiresAt,
+        policyUpdatedAt: new Date(),
+        policyUpdatedById: input.updatedById,
+      },
+    }),
+    ...input.allowedUserIds.map((userId) =>
+      prisma.artifactAllowedUser.create({ data: { artifactId, userId } }),
+    ),
+    ...input.allowedGroupIds.map((groupId) =>
+      prisma.artifactAllowedGroup.create({ data: { artifactId, groupId } }),
+    ),
+  ]);
 }

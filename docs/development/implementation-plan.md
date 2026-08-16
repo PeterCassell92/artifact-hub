@@ -93,7 +93,7 @@ flow, all frontend views + Auth0 wiring, and most tests.
 
 - `POST /api/artifacts/:id/comments` (gated by `canComment`); `PUT /api/artifacts/:id/policy` (**revocation** — `canManagePolicy`, owner-only); `POST /api/artifacts/:id/share-links` (locator only); **share-link redemption** route (re-evaluates policy live — links are not bearer tokens); `GET /api/artifacts/:id/download` (**presigned GET from Tigris/MinIO**, browser path only — never MCP).
 - **Admin** (`/api/admin/*`, API audience + `role=admin`): invitations create/list, invitation accept, users list/promote/demote/deactivate/corrective-group-change, groups create/rename. All admin mutations write an `AdminAuditLog` ([`10`](../architecture/10-observability.md)).
-- Backend create/finalize endpoints that **back the MCP publish path** (upload correlation via `bytesRef`).
+- Not built here (see decision #41, [`01`](../architecture/01-overview.md)): the create/finalize endpoints backing the MCP publish path move to Phase 4 — their only caller is `publish_artifact`, and `09`'s BDD mapping already tests that flow at the MCP layer. Also not built: the optional single-link `POST .../share-links/:linkId/revoke` (`06` §4 marks it optional; the policy stays authoritative either way).
 
 **Tests:** integration per endpoint; emphasise revocation flipping a previously-allowed viewer to denied, immutable-groups on accept, and audit rows.
 
@@ -106,6 +106,7 @@ flow, all frontend views + Auth0 wiring, and most tests.
 **Goal:** agents can publish/discover/fetch/comment/share over `/mcp`.
 
 - Replace the [`server.ts`](../../apps/backend/src/adapters/mcp/server.ts) placeholder with `@modelcontextprotocol/sdk` `StreamableHTTPServerTransport` + `McpServer`, behind the Phase-1 auth middleware (MCP audience).
+- Backend create/finalize endpoints that **back `publish_artifact`** (upload correlation via `bytesRef`) — moved here from Phase 3 (decision #41, [`01`](../architecture/01-overview.md)); build them alongside the tool that's their only caller.
 - **Tools** (metadata-only results): `publish_artifact`, `list_artifacts`, `list_shared_with_me` (all rows; first 10 as a markdown table), `get_artifact` (small inline / else pointer), `comment_on_artifact`, `create_share_link`, `set_access_policy`. **No admin tools** (R3).
 - **Resource** `artifact://<id>` — the only byte path; server-side GetObject; writes an `AccessEvent`.
 - **Prompt** `summarise_artifact_reviews` — injects comments, no server-side LLM call.

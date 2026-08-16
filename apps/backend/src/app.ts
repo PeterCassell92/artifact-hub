@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import { prisma } from "./db";
 import { getEnv } from "./env";
 import { createApiRouter } from "./adapters/http/router";
+import { createInvitationsPublicRouter } from "./adapters/http/routes/invitationsPublic";
 import { mountMcp } from "./adapters/mcp/server";
 import { createTestMcpTokenRouter } from "./adapters/http/routes/testMcpToken";
 
@@ -23,6 +24,9 @@ export function createApp(): Express {
     }
   });
 
+  // Unauthenticated invitation bootstrap (06 §6) — must be registered before the authenticated
+  // /api router below so it's matched first; the invitee has no account/token yet.
+  app.use("/api/invitations", createInvitationsPublicRouter());
   app.use("/api", createApiRouter());
   mountMcp(app);
 

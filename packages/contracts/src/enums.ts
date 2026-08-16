@@ -29,6 +29,9 @@ export const ArtifactKind = z.enum([
 ]);
 export type ArtifactKind = z.infer<typeof ArtifactKind>;
 
+export const InviteStatus = z.enum(["pending", "accepted", "expired", "revoked"]);
+export type InviteStatus = z.infer<typeof InviteStatus>;
+
 export const RelationType = z.enum([
   "supersedes",
   "derived_from",

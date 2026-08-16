@@ -8,6 +8,11 @@ const EnvSchema = z.object({
 
   INITIAL_ADMIN_EMAILS: z.string().default(""),
 
+  // The SPA's public origin — used to build absolute share-link (03 §5) and invitation-accept
+  // (02 §4) URLs (`${APP_ORIGIN}/s/<token>`, `${APP_ORIGIN}/accept-invite?token=<token>`).
+  // Dev default matches the Vite dev server port (dev-and-testing-phases-guide.md).
+  APP_ORIGIN: z.string().url().default("http://localhost:5173"),
+
   AUTH0_DOMAIN: z.string().min(1),
   AUTH0_API_AUDIENCE: z.string().min(1),
   AUTH0_MCP_AUDIENCE: z.string().min(1),
@@ -31,6 +36,10 @@ const EnvSchema = z.object({
   SMTP_USER: z.string().optional(), // Resend: "resend"; unset for MailCatcher
   SMTP_PASS: z.string().optional(), // Resend API key (a fly secret); unset for MailCatcher
   EMAIL_FROM: z.string().default("Artifact Hub <no-reply@artifact-hub.local>"),
+
+  // Transactional outbox drain loop (02 §6) — in-process poller, no extra infra. Polling this
+  // often is cheap (indexed SELECT on a low-volume table); the default favors timely invite emails.
+  OUTBOX_POLL_INTERVAL_MS: z.coerce.number().default(3000),
 
   // Object storage — Tigris (S3-compatible). `fly storage create` injects these; AWS SDK v3 reads
   // AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_REGION + the custom endpoint automatically.

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ArtifactKind, AudienceType, ExpiryOption } from "./enums.js";
-import { paginated } from "./common.js";
+import { ArtifactKind, AudienceType, ExpiryOption } from "./enums";
+import { paginated } from "./common";
 
 /** The single access policy for an artifact (audience + expiry). */
 export const AccessPolicyInput = z

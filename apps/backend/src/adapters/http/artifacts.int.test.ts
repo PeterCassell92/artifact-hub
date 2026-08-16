@@ -249,4 +249,221 @@ describe("GET /api/artifacts*", () => {
         .expect(403);
     });
   });
+
+  describe("POST /api/artifacts/:id/comments", () => {
+    it("201s and attributes the comment to the caller", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      const res = await request(app)
+        .post(`/api/artifacts/${artifact.id}/comments`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ body: "Nice work!" })
+        .expect(201);
+
+      expect(res.body).toMatchObject({ body: "Nice work!" });
+      const stored = await prisma.comment.findMany({ where: { artifactId: artifact.id } });
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({ authorId: owner.id, body: "Nice work!" });
+    });
+
+    it("403s for a user who cannot view (canComment = canView)", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const outsider = await makeActiveUser(`outsider-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "specific_users" });
+
+      await request(app)
+        .post(`/api/artifacts/${artifact.id}/comments`)
+        .set("Authorization", `Bearer ${tokenFor(outsider.idpSub as string)}`)
+        .send({ body: "Sneaky" })
+        .expect(403);
+    });
+  });
+
+  describe("PUT /api/artifacts/:id/policy (revocation)", () => {
+    it("narrowing the audience flips a previously-allowed viewer to denied, and audits it", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({
+        ownerId: owner.id,
+        audienceType: "specific_users",
+        allowedUserIds: [viewer.id],
+      });
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(200);
+
+      await request(app)
+        .put(`/api/artifacts/${artifact.id}/policy`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ audienceType: "specific_users", userEmails: [owner.email], expiry: "never" })
+        .expect(200);
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(403);
+
+      const auditRows = await prisma.adminAuditLog.findMany({
+        where: { targetType: "artifact", targetId: artifact.id, action: "policy.update" },
+      });
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toMatchObject({ actorId: owner.id });
+    });
+
+    it("owner still sees it after narrowing (owner short-circuit)", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "specific_users" });
+
+      await request(app)
+        .put(`/api/artifacts/${artifact.id}/policy`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ audienceType: "public_authenticated", expiry: "24h" })
+        .expect(200);
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+    });
+
+    it("403s a non-owner trying to change the policy", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const other = await makeActiveUser(`other-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      await request(app)
+        .put(`/api/artifacts/${artifact.id}/policy`)
+        .set("Authorization", `Bearer ${tokenFor(other.idpSub as string)}`)
+        .send({ audienceType: "public_authenticated", expiry: "never" })
+        .expect(403);
+    });
+
+    it("400s for an unknown userEmail", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      await request(app)
+        .put(`/api/artifacts/${artifact.id}/policy`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ audienceType: "specific_users", userEmails: ["nobody@test.local"], expiry: "never" })
+        .expect(400);
+    });
+  });
+
+  describe("POST /api/artifacts/:id/share-links + GET /api/s/:token (redemption)", () => {
+    it("mints a link that resolves and re-checks canView live", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({
+        ownerId: owner.id,
+        audienceType: "specific_users",
+        allowedUserIds: [viewer.id],
+      });
+
+      const created = await request(app)
+        .post(`/api/artifacts/${artifact.id}/share-links`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(201);
+
+      const token = new URL(created.body.url).pathname.split("/").pop();
+
+      const redeemed = await request(app)
+        .get(`/api/s/${token}`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(302);
+      expect(redeemed.headers.location).toContain(`/artifacts/${artifact.id}`);
+
+      const events = await prisma.accessEvent.findMany({
+        where: { artifactId: artifact.id, route: "share_link" },
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ userId: viewer.id, decision: "allowed" });
+    });
+
+    it("403s once the artifact policy no longer allows the redeemer", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const outsider = await makeActiveUser(`outsider-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "specific_users" });
+
+      const created = await request(app)
+        .post(`/api/artifacts/${artifact.id}/share-links`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(201);
+      const token = new URL(created.body.url).pathname.split("/").pop();
+
+      await request(app)
+        .get(`/api/s/${token}`)
+        .set("Authorization", `Bearer ${tokenFor(outsider.idpSub as string)}`)
+        .expect(403);
+    });
+
+    it("404s once the link itself is revoked, even if the policy would otherwise allow it", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      const created = await request(app)
+        .post(`/api/artifacts/${artifact.id}/share-links`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(201);
+      const token = new URL(created.body.url).pathname.split("/").pop();
+
+      await prisma.shareLink.update({ where: { id: created.body.id }, data: { revoked: true } });
+
+      await request(app)
+        .get(`/api/s/${token}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(404);
+    });
+
+    it("403s a non-owner trying to mint a share link", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const other = await makeActiveUser(`other-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      await request(app)
+        .post(`/api/artifacts/${artifact.id}/share-links`)
+        .set("Authorization", `Bearer ${tokenFor(other.idpSub as string)}`)
+        .expect(403);
+    });
+  });
+
+  describe("GET /api/artifacts/:id/download", () => {
+    it("302s to a presigned URL and writes a download AccessEvent", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      const res = await request(app)
+        .get(`/api/artifacts/${artifact.id}/download`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(302);
+
+      expect(res.headers.location).toContain(artifact.storageKey);
+
+      const events = await prisma.accessEvent.findMany({
+        where: { artifactId: artifact.id, action: "download" },
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ userId: owner.id, decision: "allowed" });
+    });
+
+    it("403s a user outside the audience and writes a denied download AccessEvent", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const outsider = await makeActiveUser(`outsider-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "specific_users" });
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}/download`)
+        .set("Authorization", `Bearer ${tokenFor(outsider.idpSub as string)}`)
+        .expect(403);
+
+      const events = await prisma.accessEvent.findMany({
+        where: { artifactId: artifact.id, action: "download" },
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.decision).toBe("denied");
+    });
+  });
 });

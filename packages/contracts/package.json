@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node esbuild.config.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings 0"
   },
@@ -20,6 +20,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "eslint": "^9.17.0",
     "typescript": "^5.7.2"
   }
