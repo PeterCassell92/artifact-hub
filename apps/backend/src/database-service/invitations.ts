@@ -74,7 +74,10 @@ export function isInvitationUsable(invitation: Invitation, now: Date): boolean {
 /**
  * Provisions the account (docs/architecture/02 §4): upserts the `users` row (idempotent against
  * a pre-seeded row, e.g. INITIAL_ADMIN_EMAILS), assigns the invited groups (immutable thereafter
- * — there is no self-service group-change route), and marks the invitation accepted.
+ * — there is no self-service group-change route), marks the invitation accepted, and enqueues the
+ * Auth0 provisioning outbox row in the same transaction (02 §6) — the actual Management API call
+ * (and linking its `user_id` as our `idpSub`) happens asynchronously, see
+ * workers/handlers/auth0ProvisionUser.ts.
  */
 export async function acceptInvitation(invitation: Invitation): Promise<User> {
   return prisma.$transaction(async (tx) => {
@@ -96,6 +99,15 @@ export async function acceptInvitation(invitation: Invitation): Promise<User> {
       where: { id: invitation.id },
       data: { status: "accepted", acceptedAt: new Date() },
     });
+
+    await enqueueOutboxEvent(
+      {
+        type: "auth0.provision_user",
+        payload: { userId: user.id, email: user.email },
+        idempotencyKey: `auth0-provision:${invitation.id}`,
+      },
+      tx,
+    );
 
     return user;
   });

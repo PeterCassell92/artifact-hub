@@ -86,6 +86,17 @@ describe("Invitation lifecycle (docs/architecture/02 §4)", () => {
     expect(acceptAudit).toHaveLength(1);
     expect(acceptAudit[0]?.actorId).toBeNull();
 
+    // Auth0 provisioning is enqueued (docs/architecture/02 §6), not called inline — the drain
+    // worker links idpSub asynchronously; see workers/handlers/auth0ProvisionUser.int.test.ts.
+    const provisionEvent = await prisma.outboxEvent.findUniqueOrThrow({
+      where: { idempotencyKey: `auth0-provision:${created.body.id}` },
+    });
+    expect(provisionEvent).toMatchObject({
+      type: "auth0.provision_user",
+      status: "pending",
+      payload: { userId: provisioned.id, email },
+    });
+
     // Single-use: the same token no longer previews or accepts.
     await request(app).get(`/api/invitations/${token}`).expect(404);
     await request(app).post("/api/invitations/accept").send({ token }).expect(404);
