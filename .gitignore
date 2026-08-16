@@ -87,3 +87,4 @@ Thumbs.db
 
 # Firecrawl scrape cache (web research)
 .firecrawl/
+.playwright-mcp/
