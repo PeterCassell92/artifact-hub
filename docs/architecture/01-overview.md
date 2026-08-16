@@ -152,7 +152,7 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 36 | MCP token rules | Deny-if-not-provisioned, audience-bound, identity-only, disabled-blocked | DECIDED | 02 §1.1 |
 | 37 | Admin over MCP | **Not allowed** — no admin MCP tools; `/api/admin/*` rejects MCP tokens | DECIDED | 02/05/06 |
 | 38 | Secrets strategy | Runtime → `fly secrets`; frontend → Netlify env (`VITE_*`); dev → `.env` | DECIDED | 07 |
-| 39 | idpSub linking (dev-only) | `POST /dev/mcp-token` backfills `idpSub` + flips `invited`→`active` on mint, standing in for the not-yet-built "first login" linking step. Never mounted/reachable in production; never creates a `users` row (R1 still holds) | DECIDED | 02 §1, development/bruno-mcp-token.md |
+| 39 | idpSub linking (test-only) | `POST /test/mcp-token` backfills `idpSub` + flips `invited`→`active` on mint, standing in for the not-yet-built "first login" linking step. Never mounted/reachable in production, and never used for real local dev login (still real Auth0 on the dev tenant); never creates a `users` row (R1 still holds) | DECIDED | 02 §1, development/bruno-mcp-token.md |
 | 40 | Node toolchain version | **Node 24 "Krypton" (latest LTS)**, pinned via Volta — Node 20 "Iron" (the original pin) reached its documented EOL before implementation started. Bumped root `engines`, `apps/backend/Dockerfile`, `netlify.toml` `NODE_VERSION` together | DECIDED | CLAUDE.md |
 
 Items that were **OPEN** in the WIP doc (backend host, frontend host, authz model, HTML

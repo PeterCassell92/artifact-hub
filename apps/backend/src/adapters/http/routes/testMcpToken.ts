@@ -2,24 +2,26 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../../db";
 import { getEnv } from "../../../env";
-import { mintDevToken } from "../../../auth/devTokens";
+import { mintTestToken } from "../../../auth/testTokens";
+import { sendError } from "../errors";
 
 const BodySchema = z.object({ email: z.string().email() });
 
 const EXPIRES_IN_SECONDS = 3600;
 
 /**
- * POST /dev/mcp-token — dev-only token mint (docs/development/bruno-mcp-token.md). Mounted only
- * when NODE_ENV !== "production" (see app.ts); also 404s here as a belt-and-braces guard in case
- * it's ever reached in prod some other way.
+ * POST /test/mcp-token — test-only token mint (docs/development/bruno-mcp-token.md). For Jest and
+ * manual MCP exploration (Claude Code/MCP Inspector) only — real local dev login still goes
+ * through Auth0 on the dev tenant. Mounted only when NODE_ENV !== "production" (see app.ts); also
+ * 404s here as a belt-and-braces guard in case it's ever reached in prod some other way.
  *
- * Dev-only provisioning shortcut (see docs/architecture/01 decision #39): since there is no SPA
+ * Test-only provisioning shortcut (see docs/architecture/01 decision #39): since there is no SPA
  * login flow yet to complete a user's "first sign-in" (which would normally link idpSub and flip
  * invited -> active), minting a token for a known, non-disabled seeded user here backfills idpSub
- * (if unset) and activates the account — the dev-tool analogue of that first login. It never
- * creates a new `users` row (R1 still holds: only an already-provisioned user can get a token).
+ * (if unset) and activates the account — standing in for that first login. It never creates a new
+ * `users` row (R1 still holds: only an already-provisioned user can get a token).
  */
-export function createDevMcpTokenRouter(): Router {
+export function createTestMcpTokenRouter(): Router {
   const router = Router();
 
   router.post("/mcp-token", async (req, res) => {
@@ -29,36 +31,36 @@ export function createDevMcpTokenRouter(): Router {
       return;
     }
 
-    const providedSecret = req.header("x-dev-token");
-    if (!providedSecret || providedSecret !== env.DEV_MINT_SECRET) {
-      res.status(401).json({ error: { code: "unauthorized", message: "Missing/invalid X-Dev-Token" } });
+    const providedSecret = req.header("x-test-token");
+    if (!providedSecret || providedSecret !== env.TEST_MINT_SECRET) {
+      sendError(res, 401, "unauthorized", "Missing/invalid X-Test-Token");
       return;
     }
 
     const parsed = BodySchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: { code: "bad_request", message: "email is required" } });
+      sendError(res, 400, "bad_request", "email is required");
       return;
     }
 
     const email = parsed.data.email.toLowerCase();
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      res.status(404).json({ error: { code: "not_found", message: "No user with that email" } });
+      sendError(res, 404, "not_found", "No user with that email");
       return;
     }
     if (user.status === "disabled") {
-      res.status(403).json({ error: { code: "forbidden", message: "User is disabled" } });
+      sendError(res, 403, "forbidden", "User is disabled");
       return;
     }
 
-    const idpSub = user.idpSub ?? `dev|${user.id}`;
+    const idpSub = user.idpSub ?? `test|${user.id}`;
     await prisma.user.update({
       where: { id: user.id },
       data: { idpSub, status: "active" },
     });
 
-    const accessToken = mintDevToken(
+    const accessToken = mintTestToken(
       { sub: idpSub, audience: env.AUTH0_MCP_AUDIENCE, expiresInSeconds: EXPIRES_IN_SECONDS },
       env,
     );

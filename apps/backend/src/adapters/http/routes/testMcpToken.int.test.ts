@@ -4,7 +4,7 @@ import request from "supertest";
 import { jest } from "@jest/globals";
 import { startTestDatabase, type TestDatabase } from "../../../test-support/testDatabase";
 
-describe("POST /dev/mcp-token", () => {
+describe("POST /test/mcp-token", () => {
   let db: TestDatabase;
   let prisma: PrismaClient;
   let app: Express;
@@ -29,8 +29,8 @@ describe("POST /dev/mcp-token", () => {
     });
 
     const res = await request(app)
-      .post("/dev/mcp-token")
-      .set("X-Dev-Token", getEnv().DEV_MINT_SECRET as string)
+      .post("/test/mcp-token")
+      .set("X-Test-Token", getEnv().TEST_MINT_SECRET as string)
       .send({ email: user.email })
       .expect(200);
 
@@ -46,19 +46,19 @@ describe("POST /dev/mcp-token", () => {
     expect(reloaded.idpSub).toBeTruthy();
   });
 
-  it("401s with a missing/wrong X-Dev-Token", async () => {
-    await request(app).post("/dev/mcp-token").send({ email: "nobody@test.local" }).expect(401);
+  it("401s with a missing/wrong X-Test-Token", async () => {
+    await request(app).post("/test/mcp-token").send({ email: "nobody@test.local" }).expect(401);
     await request(app)
-      .post("/dev/mcp-token")
-      .set("X-Dev-Token", "wrong-secret")
+      .post("/test/mcp-token")
+      .set("X-Test-Token", "wrong-secret")
       .send({ email: "nobody@test.local" })
       .expect(401);
   });
 
   it("404s for an email with no users row", async () => {
     await request(app)
-      .post("/dev/mcp-token")
-      .set("X-Dev-Token", getEnv().DEV_MINT_SECRET as string)
+      .post("/test/mcp-token")
+      .set("X-Test-Token", getEnv().TEST_MINT_SECRET as string)
       .send({ email: "never-seeded@test.local" })
       .expect(404);
   });
@@ -69,8 +69,8 @@ describe("POST /dev/mcp-token", () => {
     });
 
     await request(app)
-      .post("/dev/mcp-token")
-      .set("X-Dev-Token", getEnv().DEV_MINT_SECRET as string)
+      .post("/test/mcp-token")
+      .set("X-Test-Token", getEnv().TEST_MINT_SECRET as string)
       .send({ email: user.email })
       .expect(403);
   });
@@ -84,7 +84,7 @@ describe("POST /dev/mcp-token", () => {
       const { createApp: createProdApp } = await import("../../../app");
       const prodApp = createProdApp();
       await request(prodApp)
-        .post("/dev/mcp-token")
+        .post("/test/mcp-token")
         .send({ email: "whoever@test.local" })
         .expect(404);
     } finally {

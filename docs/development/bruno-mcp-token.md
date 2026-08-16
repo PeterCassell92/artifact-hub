@@ -19,11 +19,11 @@ repo and diff cleanly in git (no cloud account, no binary export) — consistent
 
 ---
 
-## 1. What has to exist first — the dev token endpoint
+## 1. What has to exist first — the test token endpoint
 
-The collection is a thin client over one new **dev-only** backend route. Spec:
+The collection is a thin client over one new **test-only** backend route. Spec:
 
-- **Route:** `POST /dev/mcp-token` (mounted on the same Express app, **outside** `/mcp` and
+- **Route:** `POST /test/mcp-token` (mounted on the same Express app, **outside** `/mcp` and
   `/api/*`).
 - **Body:** `{ "email": "alice@dev.local" }` — must resolve to a **seeded, `status=active`**
   `users` row (see `db:seed` / `INITIAL_ADMIN_EMAILS`).
@@ -36,21 +36,22 @@ The collection is a thin client over one new **dev-only** backend route. Spec:
     "aud": "https://mcp.artifact-hub.example"
   }
   ```
-- **What it signs:** a JWT with `iss` (the dev issuer), **`aud` = the MCP resource**, `sub` = that
-  user's `idp_sub`, and a short `exp` — using the **dev/test signing key**. It reuses the **same
+- **What it signs:** a JWT with `iss` (the test issuer), **`aud` = the MCP resource**, `sub` = that
+  user's `idp_sub`, and a short `exp` — using the **shared test signing key**. It reuses the **same
   test-token helper** the Jest suites use ([`09` §3–§4](../architecture/09-testing-strategy.md)); the
   endpoint is just an HTTP wrapper so a human/Bruno can obtain one too.
 - **Why this is safe & faithful:** the minted token then flows through the **unmodified RS
   middleware** — JWKS/issuer/**audience**/expiry, resolve `sub` → active `users` row (R1/R2/R4). We
-  are not bypassing authz; we are only swapping the *signer* from Auth0 to a dev key that the
-  validator trusts **only in dev/test**.
+  are not bypassing authz; we are only swapping the *signer* from Auth0 to a test key that the
+  validator trusts **only in dev/test environments** (never used for real local human login, which
+  always goes through Auth0's dev tenant — `02` §1).
 
 ### Non-negotiable guardrails (put these in the route + its tests)
 
 - **Never in production.** The route module is **not imported/mounted when `NODE_ENV=production`**
-  (belt-and-braces: also `return 404` if somehow reached). The validator's acceptance of the dev
+  (belt-and-braces: also `return 404` if somehow reached). The validator's acceptance of the test
   signing key is likewise gated to dev/test — prod trusts **only** Auth0 JWKS.
-- **Shared dev secret.** Require a header (e.g. `X-Dev-Token: <DEV_MINT_SECRET>` from
+- **Shared test secret.** Require a header (e.g. `X-Test-Token: <TEST_MINT_SECRET>` from
   `apps/backend/.env`) so the endpoint isn't wide open on a shared dev host.
 - **Active users only.** Refuse emails with no active `users` row — mirrors R1/R4 so the token you
   get behaves exactly like a real one.
@@ -59,7 +60,7 @@ The collection is a thin client over one new **dev-only** backend route. Spec:
 > If we later want a *real* Auth0 token for deeper realism, note it can't be fully scripted in
 > Bruno: our login is **passwordless magic-link + PKCE in a browser**, and Auth0 **client-credentials
 > (M2M)** tokens carry no user `sub` that resolves to a `users` row (fails R1). That's why the
-> dev-mint endpoint is the right tool for Phases 2–3 and the real interactive flow is reserved for
+> test-mint endpoint is the right tool for Phases 2–3 and the real interactive flow is reserved for
 > Phase 4.
 
 ---
@@ -73,9 +74,9 @@ code):
 tools/bruno/artifact-hub-mcp/
   bruno.json                      # collection manifest (name, version, ignore)
   environments/
-    local.bru                     # baseUrl, devUser, devMintSecret, (runtime) mcpToken
+    local.bru                     # baseUrl, devUser, testMintSecret, (runtime) mcpToken
     deployed.bru                  # baseUrl only — token N/A (Phase 4 uses interactive OAuth)
-  Mint MCP Token.bru              # POST /dev/mcp-token  → stashes access_token into env
+  Mint MCP Token.bru              # POST /test/mcp-token  → stashes access_token into env
   MCP/
     01 Initialize.bru             # JSON-RPC initialize
     02 List Tools.bru             # tools/list
@@ -89,23 +90,23 @@ tools/bruno/artifact-hub-mcp/
 vars {
   baseUrl: http://localhost:3081
   devUser: alice@dev.local
-  devMintSecret: {{process.env.DEV_MINT_SECRET}}
+  testMintSecret: {{process.env.TEST_MINT_SECRET}}
   mcpToken:                      // filled at runtime by "Mint MCP Token"
 }
 ```
 
-Keep the real secret in `.env` / your shell, referenced via `{{process.env.DEV_MINT_SECRET}}` — do
+Keep the real secret in `.env` / your shell, referenced via `{{process.env.TEST_MINT_SECRET}}` — do
 **not** hardcode it in the committed `.bru`.
 
 ### `Mint MCP Token.bru`
 
 ```
 post {
-  url: {{baseUrl}}/dev/mcp-token
+  url: {{baseUrl}}/test/mcp-token
   body: json
 }
 headers {
-  X-Dev-Token: {{devMintSecret}}
+  X-Test-Token: {{testMintSecret}}
 }
 body:json {
   { "email": "{{devUser}}" }
@@ -159,7 +160,7 @@ Phase 3 for poking raw JSON-RPC without a chat client.
 
 1. Bring up the stack (`docker compose up -d`; `yarn workspace backend dev`) and seed a dev user
    (`db:seed`).
-2. Export `DEV_MINT_SECRET` (matches `apps/backend/.env`).
+2. Export `TEST_MINT_SECRET` (matches `apps/backend/.env`).
 3. In Bruno, select the **local** environment → run **Mint MCP Token**.
 4. Either **copy the `access_token`** into your MCP client's `Authorization` header (primary goal),
    **or** run the **MCP/** requests directly in Bruno.
@@ -170,11 +171,11 @@ Phase 3 for poking raw JSON-RPC without a chat client.
 
 ## 4. Build checklist (when we implement)
 
-- [ ] Backend: shared **test-token helper** signs API- and MCP-audience JWTs with the dev/test key.
-- [ ] Backend: `POST /dev/mcp-token` route — env-gated (not mounted in prod), `X-Dev-Token`
+- [x] Backend: shared **test-token helper** signs API- and MCP-audience JWTs with the test key.
+- [x] Backend: `POST /test/mcp-token` route — env-gated (not mounted in prod), `X-Test-Token`
       guard, active-user check, reuses the helper; unit + integration tests incl. a test asserting
       it is **absent in prod**.
-- [ ] Backend: RS validator trusts the dev signing key **only** in dev/test.
+- [x] Backend: RS validator trusts the test signing key **only** in dev/test.
 - [ ] `tools/bruno/artifact-hub-mcp/` collection + `local`/`deployed` environments as above.
-- [ ] `.env.example`: add `DEV_MINT_SECRET`.
+- [x] `.env.example`: add `TEST_MINT_SECRET`.
 - [ ] Cross-link this doc from the deploy runbook's "not for prod" list.

@@ -14,7 +14,7 @@ describe("requireAuth / requireAdmin", () => {
   let db: TestDatabase;
   let prisma: PrismaClient;
   let app: Express;
-  let mintDevToken: typeof import("./devTokens").mintDevToken;
+  let mintTestToken: typeof import("./testTokens").mintTestToken;
   let getEnv: typeof import("../env").getEnv;
 
   const API_AUDIENCE = "https://api.artifact-hub.test";
@@ -25,7 +25,7 @@ describe("requireAuth / requireAdmin", () => {
     prisma = db.prisma;
 
     ({ getEnv } = await import("../env"));
-    ({ mintDevToken } = await import("./devTokens"));
+    ({ mintTestToken } = await import("./testTokens"));
     const { requireAuth, requireAdmin } = await import("./tokenValidation");
     const express = (await import("express")).default;
 
@@ -68,7 +68,7 @@ describe("requireAuth / requireAdmin", () => {
 
   it("200s with a minted valid token for an active user", async () => {
     const user = await makeUser();
-    const token = mintDevToken({ sub: user.idpSub as string, audience: API_AUDIENCE }, getEnv());
+    const token = mintTestToken({ sub: user.idpSub as string, audience: API_AUDIENCE }, getEnv());
 
     const res = await request(app).get("/protected").set("Authorization", `Bearer ${token}`).expect(200);
     expect(res.body.viewerId).toBe(user.id);
@@ -76,7 +76,7 @@ describe("requireAuth / requireAdmin", () => {
 
   it("403s for a token minted with the wrong audience", async () => {
     const user = await makeUser();
-    const token = mintDevToken({ sub: user.idpSub as string, audience: MCP_AUDIENCE }, getEnv());
+    const token = mintTestToken({ sub: user.idpSub as string, audience: MCP_AUDIENCE }, getEnv());
 
     // Cryptographically valid, just bound to a different resource (R2) — 403, not 401
     // (docs/architecture/06 §1 error contract: 401 unauthenticated, 403 denied).
@@ -85,7 +85,7 @@ describe("requireAuth / requireAdmin", () => {
 
   it("401s for an expired token", async () => {
     const user = await makeUser();
-    const token = mintDevToken(
+    const token = mintTestToken(
       { sub: user.idpSub as string, audience: API_AUDIENCE, expiresInSeconds: -10 },
       getEnv(),
     );
@@ -95,26 +95,26 @@ describe("requireAuth / requireAdmin", () => {
 
   it("403s for a disabled user", async () => {
     const user = await makeUser({ status: "disabled" });
-    const token = mintDevToken({ sub: user.idpSub as string, audience: API_AUDIENCE }, getEnv());
+    const token = mintTestToken({ sub: user.idpSub as string, audience: API_AUDIENCE }, getEnv());
 
     await request(app).get("/protected").set("Authorization", `Bearer ${token}`).expect(403);
   });
 
   it("403s for an unknown sub (no matching users row)", async () => {
-    const token = mintDevToken({ sub: "idp|never-provisioned", audience: API_AUDIENCE }, getEnv());
+    const token = mintTestToken({ sub: "idp|never-provisioned", audience: API_AUDIENCE }, getEnv());
     await request(app).get("/protected").set("Authorization", `Bearer ${token}`).expect(403);
   });
 
   it("403s a non-admin on an admin-guarded route", async () => {
     const user = await makeUser({ role: "member" });
-    const token = mintDevToken({ sub: user.idpSub as string, audience: API_AUDIENCE }, getEnv());
+    const token = mintTestToken({ sub: user.idpSub as string, audience: API_AUDIENCE }, getEnv());
 
     await request(app).get("/admin-only").set("Authorization", `Bearer ${token}`).expect(403);
   });
 
   it("200s an admin on an admin-guarded route", async () => {
     const user = await makeUser({ role: "admin" });
-    const token = mintDevToken({ sub: user.idpSub as string, audience: API_AUDIENCE }, getEnv());
+    const token = mintTestToken({ sub: user.idpSub as string, audience: API_AUDIENCE }, getEnv());
 
     await request(app).get("/admin-only").set("Authorization", `Bearer ${token}`).expect(200);
   });

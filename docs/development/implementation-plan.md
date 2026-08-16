@@ -62,12 +62,12 @@ flow, all frontend views + Auth0 wiring, and most tests.
   - Attach a `Viewer` (`{id, status, groupIds}`, role) loaded from the DB to the request.
   - Error contract per [`06`](../architecture/06-api-design.md) (`401` unauthenticated, `403` denied).
 - **Shared test-token helper** — signs API- and MCP-audience JWTs with a dev/test key the validator trusts **only in dev/test** (mirrors the `09` §3 approach). Used by Jest and by:
-- **Dev-only token-mint endpoint** `POST /dev/mcp-token` — env-gated (not mounted in prod), `X-Dev-Token` guard, active-user check. Spec + guardrails in [`bruno-mcp-token.md`](bruno-mcp-token.md).
+- **Test-only token-mint endpoint** `POST /test/mcp-token` — env-gated (not mounted in prod), `X-Test-Token` guard, active-user check. Spec + guardrails in [`bruno-mcp-token.md`](bruno-mcp-token.md).
 - **`/api/admin/*` guard**: require the API audience **and** `role=admin` from the DB (R3).
 
 **Tests:** unit (audience/expiry/issuer accept+reject; disabled-user deny; missing-user deny); integration (supertest: a protected route 401s without token, 200s with a minted valid token, 403s for wrong audience).
 
-**Acceptance:** a request with a minted valid token resolves to the seeded user; wrong-audience/expired/disabled/unknown-user all correctly denied; the dev-token endpoint is absent when `NODE_ENV=production` (assert this in a test).
+**Acceptance:** a request with a minted valid token resolves to the seeded user; wrong-audience/expired/disabled/unknown-user all correctly denied; the test-token endpoint is absent when `NODE_ENV=production` (assert this in a test).
 
 ---
 
@@ -157,5 +157,5 @@ flow, all frontend views + Auth0 wiring, and most tests.
 
 ## Suggested first session
 
-Phase 0 → Phase 1 (auth middleware + dev-token endpoint + tests) → Phase 2 (first read routes). That
+Phase 0 → Phase 1 (auth middleware + test-token endpoint + tests) → Phase 2 (first read routes). That
 delivers a demonstrable, tested login→protected-API path and unblocks everything else.

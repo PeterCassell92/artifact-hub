@@ -71,10 +71,10 @@ Pure functions in `core`, no I/O, exhaustive:
   **audience-bound token** — minted by the **shared test-token helper** (a signed test JWT with
   `aud` = the MCP resource and a `sub` for a seeded active user), the same mechanism §3 uses to stub
   Auth0 for `/api/*`. It exercises the real RS validation path (signature/issuer/audience/`status`,
-  R1/R2/R4); only the signer is a dev/test key, never trusted in prod. Assert JSON-RPC envelopes and
+  R1/R2/R4); only the signer is a test key, never trusted in prod. Assert JSON-RPC envelopes and
   that files come back as **Resources**, never tool results.
 
-> **Manual counterpart.** The same helper is exposed for hand-testing via a **dev-only token
+> **Manual counterpart.** The same helper is exposed for hand-testing via a **test token
 > endpoint** that mints an MCP-audience token you paste into an MCP client — automated by a
 > committed **Bruno collection** ([`../development/bruno-mcp-token.md`](../development/bruno-mcp-token.md)).
 > This is deliberately not the interactive OAuth flow, which is validated separately in Phase 4

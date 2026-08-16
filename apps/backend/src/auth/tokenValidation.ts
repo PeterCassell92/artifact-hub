@@ -1,11 +1,12 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { JwtPayload } from "jsonwebtoken";
 import jwt from "jsonwebtoken";
-import type { ApiErrorCode, Role } from "contracts";
+import type { Role } from "contracts";
 import { prisma } from "../db";
 import { getEnv, type Env } from "../env";
 import type { Viewer } from "../core/authz";
-import { DEV_JWT_ISSUER, verifyDevToken } from "./devTokens";
+import { sendError } from "../adapters/http/errors";
+import { TEST_JWT_ISSUER, verifyTestToken } from "./testTokens";
 import { verifyAuth0Token } from "./auth0Tokens";
 
 export interface AuthenticatedViewer extends Viewer {
@@ -27,10 +28,6 @@ function audienceFor(audience: Audience, env: Env): string {
   return audience === "api" ? env.AUTH0_API_AUDIENCE : env.AUTH0_MCP_AUDIENCE;
 }
 
-function sendError(res: Response, status: number, code: ApiErrorCode, message: string): void {
-  res.status(status).json({ error: { code, message } });
-}
-
 /**
  * Dispatches to the dev/test signer (docs/development/bruno-mcp-token.md) when the token's
  * (unverified) issuer claim is ours and we're not in production, else to real Auth0 JWKS
@@ -41,8 +38,8 @@ async function verifyToken(token: string, audience: Audience, env: Env): Promise
   const expectedAudience = audienceFor(audience, env);
   const decoded = jwt.decode(token, { json: true });
 
-  if (env.NODE_ENV !== "production" && decoded?.iss === DEV_JWT_ISSUER) {
-    return verifyDevToken(token, expectedAudience, env);
+  if (env.NODE_ENV !== "production" && decoded?.iss === TEST_JWT_ISSUER) {
+    return verifyTestToken(token, expectedAudience, env);
   }
   if (!decoded) {
     throw new Error("Malformed token");

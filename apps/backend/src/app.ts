@@ -3,7 +3,7 @@ import { prisma } from "./db";
 import { getEnv } from "./env";
 import { createApiRouter } from "./adapters/http/router";
 import { mountMcp } from "./adapters/mcp/server";
-import { createDevMcpTokenRouter } from "./adapters/http/routes/devMcpToken";
+import { createTestMcpTokenRouter } from "./adapters/http/routes/testMcpToken";
 
 /** Builds the Express app (API + MCP) — exported so integration tests can drive it. */
 export function createApp(): Express {
@@ -26,9 +26,11 @@ export function createApp(): Express {
   app.use("/api", createApiRouter());
   mountMcp(app);
 
-  // Dev-only token mint (docs/development/bruno-mcp-token.md) — never mounted in production.
+  // Test-only token mint (docs/development/bruno-mcp-token.md) — never mounted in production.
+  // Real local dev login still goes through Auth0 (docs/architecture/02 §1); this is for Jest and
+  // manual MCP exploration only (docs/development/dev-and-testing-phases-guide.md §2).
   if (getEnv().NODE_ENV !== "production") {
-    app.use("/dev", createDevMcpTokenRouter());
+    app.use("/test", createTestMcpTokenRouter());
   }
 
   return app;

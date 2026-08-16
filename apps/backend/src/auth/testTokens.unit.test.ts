@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import type { Env } from "../env";
-import { DEV_JWT_ISSUER, mintDevToken, verifyDevToken } from "./devTokens";
+import { TEST_JWT_ISSUER, mintTestToken, verifyTestToken } from "./testTokens";
 
 const API_AUDIENCE = "https://api.artifact-hub.test";
 const MCP_AUDIENCE = "https://mcp.artifact-hub.test";
@@ -21,43 +21,43 @@ const fakeEnv = (over: Partial<Env> = {}): Env => ({
   BUCKET_NAME: "artifact-hub-test",
   AWS_ENDPOINT_URL_S3: "http://localhost:9000",
   AWS_REGION: "auto",
-  DEV_JWT_SIGNING_SECRET: "unit-test-dev-signing-secret",
-  DEV_MINT_SECRET: "unit-test-dev-mint-secret",
+  TEST_JWT_SIGNING_SECRET: "unit-test-signing-secret",
+  TEST_MINT_SECRET: "unit-test-mint-secret",
   ...over,
 });
 
-describe("mintDevToken / verifyDevToken", () => {
+describe("mintTestToken / verifyTestToken", () => {
   it("round-trips a token minted for the right audience", () => {
     const env = fakeEnv();
-    const token = mintDevToken({ sub: "user-1", audience: MCP_AUDIENCE }, env);
-    const payload = verifyDevToken(token, MCP_AUDIENCE, env);
+    const token = mintTestToken({ sub: "user-1", audience: MCP_AUDIENCE }, env);
+    const payload = verifyTestToken(token, MCP_AUDIENCE, env);
     expect(payload.sub).toBe("user-1");
     expect(payload.aud).toBe(MCP_AUDIENCE);
-    expect(payload.iss).toBe(DEV_JWT_ISSUER);
+    expect(payload.iss).toBe(TEST_JWT_ISSUER);
   });
 
   it("rejects a token presented at the wrong audience", () => {
     const env = fakeEnv();
-    const token = mintDevToken({ sub: "user-1", audience: API_AUDIENCE }, env);
-    expect(() => verifyDevToken(token, MCP_AUDIENCE, env)).toThrow();
+    const token = mintTestToken({ sub: "user-1", audience: API_AUDIENCE }, env);
+    expect(() => verifyTestToken(token, MCP_AUDIENCE, env)).toThrow();
   });
 
   it("rejects an expired token", () => {
     const env = fakeEnv();
-    const token = mintDevToken({ sub: "user-1", audience: MCP_AUDIENCE, expiresInSeconds: -10 }, env);
-    expect(() => verifyDevToken(token, MCP_AUDIENCE, env)).toThrow();
+    const token = mintTestToken({ sub: "user-1", audience: MCP_AUDIENCE, expiresInSeconds: -10 }, env);
+    expect(() => verifyTestToken(token, MCP_AUDIENCE, env)).toThrow();
   });
 
   it("rejects a token with the wrong issuer", () => {
     const env = fakeEnv();
-    const foreignToken = jwt.sign({}, env.DEV_JWT_SIGNING_SECRET as string, {
+    const foreignToken = jwt.sign({}, env.TEST_JWT_SIGNING_SECRET as string, {
       subject: "user-1",
       audience: MCP_AUDIENCE,
       issuer: "https://not-us.example/",
       algorithm: "HS256",
       expiresIn: 3600,
     });
-    expect(() => verifyDevToken(foreignToken, MCP_AUDIENCE, env)).toThrow();
+    expect(() => verifyTestToken(foreignToken, MCP_AUDIENCE, env)).toThrow();
   });
 
   it("rejects a token signed with a different secret", () => {
@@ -65,15 +65,15 @@ describe("mintDevToken / verifyDevToken", () => {
     const tampered = jwt.sign({}, "some-other-secret", {
       subject: "user-1",
       audience: MCP_AUDIENCE,
-      issuer: DEV_JWT_ISSUER,
+      issuer: TEST_JWT_ISSUER,
       algorithm: "HS256",
       expiresIn: 3600,
     });
-    expect(() => verifyDevToken(tampered, MCP_AUDIENCE, env)).toThrow();
+    expect(() => verifyTestToken(tampered, MCP_AUDIENCE, env)).toThrow();
   });
 
   it("refuses to mint in production", () => {
     const env = fakeEnv({ NODE_ENV: "production" });
-    expect(() => mintDevToken({ sub: "user-1", audience: MCP_AUDIENCE }, env)).toThrow();
+    expect(() => mintTestToken({ sub: "user-1", audience: MCP_AUDIENCE }, env)).toThrow();
   });
 });

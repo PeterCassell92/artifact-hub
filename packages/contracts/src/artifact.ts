@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ArtifactKind, AudienceType, ExpiryOption } from "./enums.js";
+import { paginated } from "./common.js";
 
 /** The single access policy for an artifact (audience + expiry). */
 export const AccessPolicyInput = z
@@ -51,6 +52,18 @@ export const ArtifactSummary = z.object({
 });
 export type ArtifactSummary = z.infer<typeof ArtifactSummary>;
 
+/** GET /api/artifacts response envelope (docs/architecture/06 §1 pagination). */
+export const ArtifactListResponse = paginated(ArtifactSummary);
+export type ArtifactListResponse = z.infer<typeof ArtifactListResponse>;
+
+/** GET /api/artifacts/:id response — summary fields plus what the detail view needs. */
+export const ArtifactDetail = ArtifactSummary.extend({
+  description: z.string().nullable(),
+  ownerId: z.string().uuid(),
+  canManagePolicy: z.boolean(),
+});
+export type ArtifactDetail = z.infer<typeof ArtifactDetail>;
+
 /** Filters/search accepted by the list endpoints (see docs/frontend/02). */
 export const ArtifactListQuery = z.object({
   scope: z.enum(["mine", "sharedWithMe"]).default("mine"),
@@ -59,9 +72,23 @@ export const ArtifactListQuery = z.object({
   kind: z.array(ArtifactKind).optional(),
   tags: z.array(z.string()).optional(),
   sourceTool: z.array(z.string()).optional(),
-  sinceHours: z.number().int().positive().optional(),
+  // coerce: these schemas validate req.query too, where every value arrives as a string.
+  sinceHours: z.coerce.number().int().positive().optional(),
   sort: z.enum(["published", "title", "lastAccessed", "size"]).default("published"),
   cursor: z.string().optional(),
-  limit: z.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type ArtifactListQuery = z.infer<typeof ArtifactListQuery>;
+
+/**
+ * What GET /api/artifacts actually supports today (implementation-plan.md Phase 2: "My
+ * Artifacts — owner's own" only). `scope`/`q`/facets/`sort` land with the full search feature
+ * (docs/frontend/02-filtering-and-search.md); reject them explicitly rather than silently
+ * ignoring a filter the caller thinks was applied.
+ */
+export const MyArtifactsQuery = ArtifactListQuery.pick({
+  scope: true,
+  cursor: true,
+  limit: true,
+});
+export type MyArtifactsQuery = z.infer<typeof MyArtifactsQuery>;

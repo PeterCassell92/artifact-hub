@@ -143,13 +143,13 @@ realism:
    **real** signature/issuer/audience/`status=active` checks (R1/R2/R4) — only the *signer* is a
    dev/test key trusted **in dev/test only**, never in prod.
    - **Automated (Jest):** the shared test-token helper mints the JWT in-process.
-   - **Manual (you, at the REPL of a chat client):** mint one via the **dev-only token endpoint** and
+   - **Manual (you, at the REPL of a chat client):** mint one via the **test token endpoint** and
      paste it into your MCP client config's `Authorization` header — this is what the
      [Bruno collection](bruno-mcp-token.md) automates.
 2. **Deployed final validation (Phase 4) — the real interactive flow.** Against the deployed Fly
    `/mcp`, **Claude Desktop** completes the genuine **OAuth/DCR + passwordless magic-link** browser
    sign-in (R5). No shortcut token here — Phase 4 exists precisely to prove that real flow end-to-end.
-   The dev token endpoint is **not** deployed to prod.
+   The test token endpoint is **not** deployed to prod.
 
 So the client config above is sufficient for Phases 2–3 **once you add the minted bearer token**;
 Phase 4 relies on the client's interactive sign-in instead. See [`bruno-mcp-token.md`](bruno-mcp-token.md)
