@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedViewer } from "../../auth/tokenValidatio
 import { registerArtifactTools } from "./tools";
 import { registerArtifactResource } from "./resource";
 import { registerPrompts } from "./prompts";
+import { buildServerInstructions } from "./instructions";
 
 /**
  * Builds a fresh, fully-registered server for one HTTP request (docs/architecture/05 §1:
@@ -14,7 +15,10 @@ import { registerPrompts } from "./prompts";
  * `requireAuth("mcp")` before this is called.
  */
 export function createMcpServer(viewer: AuthenticatedViewer): McpServer {
-  const server = new McpServer({ name: "artifact-hub", version: "1.0.0" });
+  const server = new McpServer(
+    { name: "artifact-hub", version: "1.0.0" },
+    { instructions: buildServerInstructions() },
+  );
 
   registerArtifactTools(server, viewer);
   registerArtifactResource(server, viewer);

@@ -10,6 +10,7 @@ export type InvitationWithInviter = Invitation & { invitedBy: { name: string | n
 
 export interface CreateInvitationParams {
   email: string;
+  name?: string;
   role: Role;
   groupIds: string[];
   invitedById: string;
@@ -25,6 +26,11 @@ export interface CreatedInvitation {
  * (docs/architecture/02 §6). Draining the outbox (the actual Resend call) is Phase 5 — until
  * then the raw token lives only in the outbox payload, never in this function's caller-visible
  * response beyond the raw `token` returned here (never persisted itself; only its hash is).
+ *
+ * Also creates a placeholder `users` row (status="invited") + its group memberships up front, so
+ * the invitee shows up in the admin users list immediately instead of only after they accept —
+ * mirrors how seeded initial admins already get a status="invited" row (02 §5). Skipped if a user
+ * with this email already exists (e.g. a re-invite), so we never clobber an active/disabled user.
  */
 export async function createInvitation(params: CreateInvitationParams): Promise<CreatedInvitation> {
   const token = generateToken();
@@ -34,6 +40,7 @@ export async function createInvitation(params: CreateInvitationParams): Promise<
     const inv = await tx.invitation.create({
       data: {
         email: params.email,
+        name: params.name ?? null,
         role: params.role,
         groupIds: params.groupIds,
         tokenHash: hashToken(token),
@@ -42,6 +49,17 @@ export async function createInvitation(params: CreateInvitationParams): Promise<
       },
       include: { invitedBy: { select: { name: true } } },
     });
+
+    const existingUser = await tx.user.findUnique({ where: { email: params.email } });
+    if (!existingUser) {
+      const user = await tx.user.create({
+        data: { email: params.email, name: params.name ?? null, role: params.role, status: "invited" },
+      });
+      for (const groupId of params.groupIds) {
+        await tx.groupMembership.create({ data: { userId: user.id, groupId } });
+      }
+    }
+
     await enqueueOutboxEvent(
       {
         type: "invitation.send",

@@ -194,30 +194,37 @@ admin invitation. Flow:
 
 ```
 Admin (in /admin/users)
-   │  POST /api/admin/invitations { email, role, groupIds[] }
+   │  POST /api/admin/invitations { email, name?, role, groupIds[] }
    ▼
-Backend: create `invitations` row
-   • token = random; store token_hash only; expires_at (e.g. +7d); status=pending
-   • record email, role, groupIds, invited_by
+Backend (one transaction):
+   • create `invitations` row — token = random; store token_hash only; expires_at (e.g. +7d);
+     status=pending; record email, name, role, groupIds, invited_by
+   • create a placeholder `users` row (status=invited, role + name from the invite) and its
+     `group_memberships` up front — skipped if a `users` row for this email already exists (e.g.
+     a pre-seeded admin, or a re-invite), so an active/disabled user is never clobbered. This is
+     what makes the invitee show up in `/admin/users` immediately, not only after they accept.
    │  (transactional outbox row enqueued)
    ▼
 Resend: send email with link  https://<app>/accept-invite?token=<token>
    ▼
-Invitee opens link → SPA accept page (confirms name; NO password to set)
+Invitee opens link → SPA accept page (NO password to set; no name prompt — name is admin-set)
    ▼
 Backend accept: POST /api/invitations/accept { token }
    • validate token_hash, not expired, status=pending
    • create/enable the Auth0 user for this email (passwordless connection; Management API)
-   • create the app `users` row (role from invite, status=active)
-   • insert `group_memberships` for each invited groupId (immutable thereafter)
+   • upsert the app `users` row to status=active, role from invite (row already exists from
+     invite time in the common case; upsert also covers the pre-seeded-admin case)
+   • upsert `group_memberships` for each invited groupId (idempotent against the invite-time
+     insert; immutable thereafter)
    • mark invitation status=accepted, accepted_at=now
    ▼
 Invitee signs in via magic link (Role A) → provisioned user, correct groups
 ```
 
 Because auth is passwordless, accepting an invitation sets **no password** — it verifies the
-email, provisions the account + groups, and the user thereafter signs in via magic link. (The
-invitation email itself can double as the first magic-link sign-in.)
+email and activates the account (already provisioned with its groups at invite time), and the
+user thereafter signs in via magic link. (The invitation email itself can double as the first
+magic-link sign-in.)
 
 Notes:
 - The **invitation is the source of truth** for role + group assignment.
@@ -272,12 +279,14 @@ requires `role=admin`, so an MCP-audience token is rejected before any admin han
 
 Frontend routes (SPA), all gated to `role=admin`:
 
-- **`/admin`** — landing/dashboard.
-- **`/admin/users`** — list users; **invite** (email + role + group(s)); view status
+- **`/admin`** — redirects to `/admin/users`. `/admin/users` and `/admin/groups` render as tabs of
+  one shell, not standalone pages.
+- **`/admin/users`** — list users; **invite** (email + name + role + group(s)); view status
   (invited/active); **promote a member to admin / demote an admin to member**; corrective group
-  change; deactivate.
-- **`/admin/groups`** — list/create groups (v1: create + rename; membership managed via invites
-  / corrective edits).
+  change; deactivate. An admin can never demote or disable **themself** (409 + guarded in the UI)
+  — distinct from the last-remaining-admin lock-out, which guards everyone.
+- **`/admin/groups`** — list/create groups (v1: create only, no rename/delete; membership managed
+  via invites / corrective edits).
 
 ### Promote / demote (existing users)
 Promoting an existing member to `admin` (or demoting) is a first-class admin action:

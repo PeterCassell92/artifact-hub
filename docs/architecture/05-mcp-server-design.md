@@ -16,6 +16,10 @@ artifacts conversationally.
 - Stateless-friendly, so it scales behind `fly-proxy` across many Fly machines.
 - Built with the **MCP TypeScript SDK** (`StreamableHTTPServerTransport`) mounted on the same
   Express app that serves `/api/*`.
+- **Server-level `instructions`** (spec's `InitializeResult.instructions`, sent once during the
+  `initialize` handshake): whole-server orientation for the agent — how publishing/discovery/
+  sharing/revocation fit together and that a companion web app exists — complementing (not
+  replacing) each tool/prompt/resource's own description. See `instructions.ts`.
 
 ## 2. Authentication & authorization
 

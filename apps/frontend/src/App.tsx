@@ -10,6 +10,7 @@ import { GetStartedPage } from "./pages/GetStartedPage";
 import { MyArtifactsPage } from "./pages/MyArtifactsPage";
 import { SharedWithMePage } from "./pages/SharedWithMePage";
 import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
+import { AdminPage } from "./pages/AdminPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminGroupsPage } from "./pages/AdminGroupsPage";
 
@@ -31,9 +32,11 @@ export default function App() {
           <Route path="/artifacts/:id" element={<ArtifactDetailPage />} />
 
           <Route element={<AdminRoute />}>
-            <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
-            <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/admin/groups" element={<AdminGroupsPage />} />
+            <Route element={<AdminPage />}>
+              <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
+              <Route path="/admin/users" element={<AdminUsersPage />} />
+              <Route path="/admin/groups" element={<AdminGroupsPage />} />
+            </Route>
           </Route>
         </Route>
       </Route>

@@ -154,6 +154,20 @@ describe("/api/admin/*", () => {
         .send({ role: "member" })
         .expect(204);
     });
+
+    it("409s an admin attempting to change their own role", async () => {
+      const admin1 = await makeUser("admin");
+      await makeUser("admin"); // second active admin so the lock-out guard isn't what blocks this
+
+      await request(app)
+        .post(`/api/admin/users/${admin1.id}/role`)
+        .set("Authorization", `Bearer ${tokenFor(admin1.idpSub as string)}`)
+        .send({ role: "member" })
+        .expect(409);
+
+      const reloaded = await prisma.user.findUniqueOrThrow({ where: { id: admin1.id } });
+      expect(reloaded.role).toBe("admin");
+    });
   });
 
   describe("POST /api/admin/users/:id/disable", () => {
@@ -183,6 +197,19 @@ describe("/api/admin/*", () => {
         .post(`/api/admin/users/${soleAdmin.id}/disable`)
         .set("Authorization", `Bearer ${tokenFor(soleAdmin.idpSub as string)}`)
         .expect(409);
+    });
+
+    it("409s an admin attempting to disable their own account", async () => {
+      const admin1 = await makeUser("admin");
+      await makeUser("admin"); // second active admin so the lock-out guard isn't what blocks this
+
+      await request(app)
+        .post(`/api/admin/users/${admin1.id}/disable`)
+        .set("Authorization", `Bearer ${tokenFor(admin1.idpSub as string)}`)
+        .expect(409);
+
+      const reloaded = await prisma.user.findUniqueOrThrow({ where: { id: admin1.id } });
+      expect(reloaded.status).toBe("active");
     });
   });
 

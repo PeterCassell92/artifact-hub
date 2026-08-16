@@ -7,6 +7,10 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   "rounded-md px-3 py-2 text-sm font-medium " +
   (isActive ? "bg-neutral-900 text-white" : "text-neutral-700 hover:bg-neutral-100");
 
+const adminLinkClass = ({ isActive }: { isActive: boolean }) =>
+  "rounded-md px-3 py-1.5 text-sm font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 " +
+  (isActive ? "ring-2 ring-blue-300" : "");
+
 /** Top nav + notifications, wraps every authenticated page (docs/frontend/01 route map). */
 export function AppLayout() {
   const { logout } = useAuth0();
@@ -18,7 +22,8 @@ export function AppLayout() {
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
           <nav className="flex items-center gap-1">
-            <NavLink to="/" end className={navLinkClass}>
+            <NavLink to="/" end className={({ isActive }) => "flex items-center gap-2 " + navLinkClass({ isActive })}>
+              <img src="/logo.svg" alt="" className="h-7 w-7" />
               Artifact Hub
             </NavLink>
             <NavLink to="/get-started" className={navLinkClass}>
@@ -30,13 +35,13 @@ export function AppLayout() {
             <NavLink to="/shared" className={navLinkClass}>
               Shared With Me
             </NavLink>
+          </nav>
+          <div className="flex items-center gap-3 text-sm text-neutral-600">
             {me?.role === "admin" && (
-              <NavLink to="/admin/users" className={navLinkClass}>
+              <NavLink to="/admin/users" className={adminLinkClass}>
                 Admin
               </NavLink>
             )}
-          </nav>
-          <div className="flex items-center gap-3 text-sm text-neutral-600">
             {me && <span>{me.name ?? me.email}</span>}
             <button
               type="button"

@@ -4,6 +4,7 @@ import {
   useChangeUserRoleMutation,
   useDisableUserMutation,
   useGetGroupsQuery,
+  useGetMeQuery,
   useGetUsersQuery,
   useInviteUserMutation,
 } from "../store/api";
@@ -13,6 +14,7 @@ import { Modal } from "../components/Modal";
 
 /** /admin/users — invite, promote/demote, disable (docs/frontend/01 §7). */
 export function AdminUsersPage() {
+  const { data: me } = useGetMeQuery();
   const { data: users } = useGetUsersQuery();
   const { data: groups } = useGetGroupsQuery();
   const [inviteUser, { isLoading: isInviting }] = useInviteUserMutation();
@@ -21,6 +23,7 @@ export function AdminUsersPage() {
   const dispatch = useAppDispatch();
 
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [role, setRole] = useState<"member" | "admin">("member");
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -45,9 +48,10 @@ export function AdminUsersPage() {
     setEmailError(null);
 
     try {
-      await inviteUser({ email, role, groupIds }).unwrap();
+      await inviteUser({ email, name: name.trim() || undefined, role, groupIds }).unwrap();
       dispatch(notify("success", `Invited ${email}`));
       setEmail("");
+      setName("");
       setRole("member");
       setGroupIds([]);
     } catch {
@@ -93,6 +97,18 @@ export function AdminUsersPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              className="mt-1 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="invite-name" className="block text-xs font-medium text-neutral-600">
+              Name
+            </label>
+            <input
+              id="invite-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               className="mt-1 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
             />
           </div>
@@ -160,26 +176,30 @@ export function AdminUsersPage() {
               <td className="py-2">{user.role}</td>
               <td className="py-2">{user.groupNames.join(", ") || "—"}</td>
               <td className="py-2">
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setConfirmTarget({ user, action: user.role === "admin" ? "demote" : "promote" })
-                    }
-                    className="text-neutral-600 hover:text-neutral-900"
-                  >
-                    {user.role === "admin" ? "Demote" : "Promote"}
-                  </button>
-                  {user.status !== "disabled" && (
+                {user.id === me?.id ? (
+                  <span className="text-neutral-400">(you)</span>
+                ) : (
+                  <div className="flex gap-3">
                     <button
                       type="button"
-                      onClick={() => setConfirmTarget({ user, action: "disable" })}
-                      className="text-red-600 hover:text-red-800"
+                      onClick={() =>
+                        setConfirmTarget({ user, action: user.role === "admin" ? "demote" : "promote" })
+                      }
+                      className="text-neutral-600 hover:text-neutral-900"
                     >
-                      Disable
+                      {user.role === "admin" ? "Demote" : "Promote"}
                     </button>
-                  )}
-                </div>
+                    {user.status !== "disabled" && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmTarget({ user, action: "disable" })}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        Disable
+                      </button>
+                    )}
+                  </div>
+                )}
               </td>
             </tr>
           ))}

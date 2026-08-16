@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 200" width="240" height="200">
+  <title>Artifact Hub logo: diamonds in a mining cart</title>
+
+  <!-- axle -->
+  <line x1="70" y1="172" x2="170" y2="172" stroke="#5A3A22" stroke-width="6" stroke-linecap="round" />
+
+  <!-- diamonds (small to large, back to front) -->
+  <g stroke="#2E7DA3" stroke-linejoin="round">
+    <!-- small left -->
+    <polygon points="58,90 58,126 45,108" fill="#A9E6FA" stroke-width="2" />
+    <polygon points="58,90 58,126 71,108" fill="#5FBEE8" stroke-width="2" />
+
+    <!-- small right -->
+    <polygon points="182,90 182,126 169,108" fill="#A9E6FA" stroke-width="2" />
+    <polygon points="182,90 182,126 195,108" fill="#5FBEE8" stroke-width="2" />
+
+    <!-- mid left -->
+    <polygon points="82,70 82,126 62,98" fill="#A9E6FA" stroke-width="2.5" />
+    <polygon points="82,70 82,126 102,98" fill="#5FBEE8" stroke-width="2.5" />
+
+    <!-- mid right -->
+    <polygon points="158,70 158,126 138,98" fill="#A9E6FA" stroke-width="2.5" />
+    <polygon points="158,70 158,126 178,98" fill="#5FBEE8" stroke-width="2.5" />
+
+    <!-- center, largest -->
+    <polygon points="120,46 120,130 92,88" fill="#BDEEFF" stroke-width="3" />
+    <polygon points="120,46 120,130 148,88" fill="#6FCBEF" stroke-width="3" />
+  </g>
+
+  <!-- cart body (drawn above the diamonds so it occludes the gems' lower halves,
+       reading as gems piled inside the cart rather than sitting on top of it) -->
+  <polygon points="50,108 190,108 175,166 65,166"
+           fill="#96633C" stroke="#5A3A22" stroke-width="4" stroke-linejoin="round" />
+
+  <!-- cart front rim (clean edge along the top of the body) -->
+  <rect x="40" y="98" width="160" height="16" rx="4" fill="#7A4E2E" stroke="#5A3A22" stroke-width="3" />
+
+  <!-- wheels (drawn above the body so they read as mounted in front of it) -->
+  <g>
+    <circle cx="70" cy="172" r="24" fill="#3B2A1D" />
+    <circle cx="70" cy="172" r="15" fill="#6B4A2E" />
+    <circle cx="70" cy="172" r="6" fill="#C9A66B" />
+  </g>
+  <g>
+    <circle cx="170" cy="172" r="24" fill="#3B2A1D" />
+    <circle cx="170" cy="172" r="15" fill="#6B4A2E" />
+    <circle cx="170" cy="172" r="6" fill="#C9A66B" />
+  </g>
+
+  <!-- sparkles -->
+  <path d="M95,55 L96.5,58.5 L100,60 L96.5,61.5 L95,65 L93.5,61.5 L90,60 L93.5,58.5 Z" fill="#FFFFFF" opacity="0.9" />
+  <path d="M150,60 L151.2,62.8 L154,64 L151.2,65.2 L150,68 L148.8,65.2 L146,64 L148.8,62.8 Z" fill="#FFFFFF" opacity="0.85" />
+</svg>

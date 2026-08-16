@@ -8,12 +8,14 @@ import { NotificationRegion } from "../components/NotificationRegion";
 
 const inviteUnwrap = jest.fn<() => Promise<InvitationView>>();
 const inviteUser = jest.fn(() => ({ unwrap: inviteUnwrap }));
+const useGetMeQuery = jest.fn<() => { data?: UserView }>();
 const useGetUsersQuery = jest.fn<() => { data?: UserView[] }>();
 const useGetGroupsQuery = jest.fn<() => { data?: GroupView[] }>();
 const changeUserRoleUnwrap = jest.fn<() => Promise<void>>();
 const disableUserUnwrap = jest.fn<() => Promise<void>>();
 
 jest.unstable_mockModule("../store/api", () => ({
+  useGetMeQuery: () => useGetMeQuery(),
   useGetUsersQuery: () => useGetUsersQuery(),
   useGetGroupsQuery: () => useGetGroupsQuery(),
   useInviteUserMutation: () => [inviteUser, { isLoading: false }],
@@ -47,6 +49,16 @@ describe("AdminUsersPage", () => {
     });
     useGetGroupsQuery.mockReturnValue({
       data: [{ id: "group-1", name: "Engineering", description: null, createdAt: "2026-01-01T00:00:00.000Z" }],
+    });
+    useGetMeQuery.mockReturnValue({
+      data: {
+        id: "admin-self",
+        email: "self@test.local",
+        name: null,
+        role: "admin",
+        status: "active",
+        groupNames: [],
+      },
     });
     useGetUsersQuery.mockReturnValue({
       data: [
@@ -101,8 +113,55 @@ describe("AdminUsersPage", () => {
 
     expect(inviteUser).toHaveBeenCalledWith({
       email: "new@test.local",
+      name: undefined,
       role: "member",
       groupIds: ["group-1"],
     });
+  });
+
+  it("includes the name when the admin provides one", async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/email/i), "new@test.local");
+    await user.type(screen.getByLabelText(/^name$/i), "New Person");
+    await user.click(screen.getByLabelText("Engineering"));
+    await user.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    expect(inviteUser).toHaveBeenCalledWith({
+      email: "new@test.local",
+      name: "New Person",
+      role: "member",
+      groupIds: ["group-1"],
+    });
+  });
+
+  it("hides promote/demote/disable actions for the logged-in admin's own row", () => {
+    useGetUsersQuery.mockReturnValue({
+      data: [
+        {
+          id: "admin-self",
+          email: "self@test.local",
+          name: null,
+          role: "admin",
+          status: "active",
+          groupNames: [],
+        },
+        {
+          id: "user-1",
+          email: "ada@test.local",
+          name: "Ada Lovelace",
+          role: "member",
+          status: "active",
+          groupNames: ["Engineering"],
+        },
+      ],
+    });
+
+    renderPage();
+
+    expect(screen.getByText("(you)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /promote/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /disable/i })).toHaveLength(1);
   });
 });

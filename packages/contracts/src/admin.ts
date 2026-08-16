@@ -12,9 +12,11 @@ export const UserView = z.object({
 });
 export type UserView = z.infer<typeof UserView>;
 
-/** Admin invites a user (email + role + group(s)). */
+/** Admin invites a user (email + role + group(s)). Name is optional — set on the placeholder
+ * user record immediately, so it shows up in the users list before the invitee accepts. */
 export const CreateInvitationInput = z.object({
   email: z.string().email(),
+  name: z.string().trim().min(1).optional(),
   role: Role.default("member"),
   groupIds: z.array(z.string().uuid()).default([]),
 });

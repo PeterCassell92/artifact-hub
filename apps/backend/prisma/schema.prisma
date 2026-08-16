@@ -118,6 +118,7 @@ model GroupMembership {
 model Invitation {
   id          String       @id @default(uuid())
   email       String
+  name        String? // admin-provided display name, applied to the user record at invite time
   role        Role         @default(member)
   groupIds    String[] // groups to assign on accept (immutable thereafter)
   tokenHash   String       @unique // sha-256 of the emailed token; raw token only in the link

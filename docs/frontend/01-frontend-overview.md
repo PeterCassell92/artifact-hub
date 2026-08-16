@@ -79,11 +79,21 @@ Gated by `canView`. Shows:
 
 ## 7. Admin area (`/admin`)
 
-Admin-only (see `../architecture/02-auth-identity-and-admin.md` §7):
+Admin-only (see `../architecture/02-auth-identity-and-admin.md` §7). `/admin/users` and
+`/admin/groups` render as **tabs of one shell** (`AdminPage`) rather than unrelated pages, so
+adding further admin sections later is a new tab, not a new nav entry:
 
-- **`/admin/users`** — list users (email, name, status, role, groups); **invite** (email + role +
-  group(s)); **promote a member to admin / demote**; corrective group change; deactivate.
-- **`/admin/groups`** — list/create/rename groups.
+- **`/admin/users`** — list users (email, name, status, role, groups); **invite** (email + name +
+  role + group(s)) — the invitee's placeholder `users` row (status `invited`) appears in the list
+  immediately, before they accept; **promote a member to admin / demote**; corrective group
+  change; deactivate. An admin cannot demote or disable **their own** account (row shows "(you)"
+  instead of actions) — server-enforced, not just hidden client-side.
+- **`/admin/groups`** — list/create groups (no rename/delete in v1 — see decision log in
+  `../architecture/01-overview.md`).
+
+The **Admin nav entry** itself is not one of the left-hand navlinks — it renders as a light-blue
+pill in the header, to the left of the signed-in user's email, so it reads as a distinct
+"mode switch" rather than another page in the primary nav.
 
 ## 8. Cross-cutting UX
 

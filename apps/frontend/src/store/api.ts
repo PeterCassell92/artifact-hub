@@ -117,7 +117,10 @@ export const api = createApi({
     }),
     inviteUser: builder.mutation<InvitationView, CreateInvitationInput>({
       query: (body) => ({ url: "/admin/invitations", method: "POST", body }),
-      invalidatesTags: ["Invitation"],
+      // Also invalidates "User" — inviting creates a placeholder invited user row immediately
+      // (see apps/backend database-service/invitations.ts createInvitation), so the users table
+      // must refetch too, not just the invitations list.
+      invalidatesTags: ["Invitation", "User"],
     }),
     getInvitations: builder.query<InvitationView[], void>({
       query: () => "/admin/invitations",

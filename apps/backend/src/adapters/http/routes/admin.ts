@@ -97,6 +97,11 @@ export function createAdminRouter(): Router {
       return;
     }
 
+    if (params.data.id === req.viewer!.id) {
+      sendError(res, 409, "conflict", "Cannot change your own role");
+      return;
+    }
+
     if (body.data.role !== "admin" && !(await isSafeToRemoveAdmin(params.data.id))) {
       sendError(res, 409, "conflict", "Cannot demote the last remaining admin");
       return;
@@ -119,6 +124,11 @@ export function createAdminRouter(): Router {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
       sendError(res, 400, "bad_request", "Invalid user id");
+      return;
+    }
+
+    if (params.data.id === req.viewer!.id) {
+      sendError(res, 409, "conflict", "Cannot disable your own account");
       return;
     }
 
@@ -177,6 +187,7 @@ export function createAdminRouter(): Router {
 
     const { invitation } = await createInvitation({
       email: body.data.email,
+      name: body.data.name,
       role: body.data.role,
       groupIds: body.data.groupIds,
       invitedById: req.viewer!.id,

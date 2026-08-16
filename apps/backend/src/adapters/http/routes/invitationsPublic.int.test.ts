@@ -102,6 +102,32 @@ describe("Invitation lifecycle (docs/architecture/02 §4)", () => {
     await request(app).post("/api/invitations/accept").send({ token }).expect(404);
   });
 
+  it("shows the invitee in GET /api/admin/users immediately, with the given name — before accept", async () => {
+    const admin = await makeAdmin();
+    const group = await prisma.group.create({ data: { name: `design-${Math.random()}` } });
+    const email = `pending-${Math.random()}@test.local`;
+
+    await request(app)
+      .post("/api/admin/invitations")
+      .set("Authorization", `Bearer ${tokenFor(admin.idpSub as string)}`)
+      .send({ email, name: "Pending Person", role: "member", groupIds: [group.id] })
+      .expect(201);
+
+    const users = await request(app)
+      .get("/api/admin/users")
+      .set("Authorization", `Bearer ${tokenFor(admin.idpSub as string)}`)
+      .expect(200);
+
+    expect(users.body).toContainEqual(
+      expect.objectContaining({
+        email,
+        name: "Pending Person",
+        status: "invited",
+        groupNames: [group.name],
+      }),
+    );
+  });
+
   it("activates a pre-seeded (INITIAL_ADMIN_EMAILS-style) users row instead of erroring on conflict", async () => {
     const admin = await makeAdmin();
     const email = `preseeded-${Math.random()}@test.local`;
