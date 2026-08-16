@@ -32,13 +32,84 @@ points at MailCatcher in dev, Resend in prod; the S3 client points at MinIO in d
 |--------------|-----|-------|
 | **Node + Yarn** | run the apps | pinned by **Volta** (root `package.json`); `cd` into the repo auto-switches. CI/Corepack fall back to `packageManager`. |
 | **Docker** (+ compose) | runs the datastores/mail/storage above; also Testcontainers | Docker Desktop or engine. |
-| **Auth0 — `ArtifactHub-Dev` tenant** ⬅ *the one real external service* | all sign-in is passwordless magic link; the backend **won't boot** without `AUTH0_*` set, and both `/api` and `/mcp` validate real tokens | Auth0 is **one tenant per environment** ([`02` §1](../architecture/02-auth-identity-and-admin.md)); dev uses **`ArtifactHub-Dev`**. Create a **passwordless (email) connection**, a **SPA application** (frontend), and two **APIs/audiences** — one for `/api/*`, one for `/mcp`. SPA callback/logout/web-origin URLs are **localhost only** (`http://localhost:5173`) in this tenant. Fill `AUTH0_*` in `apps/backend/.env` and `VITE_AUTH0_*` in `apps/frontend/.env`. Magic-link emails are read from the **Auth0 tenant log**, not MailCatcher (see [`email-catcher.md`](email-catcher.md)). |
+| **Auth0 — `ArtifactHub-Dev` tenant** ⬅ *the one real external service* | all sign-in is passwordless magic link; the backend **won't boot** without `AUTH0_*` set, and both `/api` and `/mcp` validate real tokens | Auth0 is **one tenant per environment** ([`02` §1](../architecture/02-auth-identity-and-admin.md)); dev uses **`ArtifactHub-Dev`**. It needs a **passwordless (email) connection**, a **SPA application** (frontend), two **APIs/audiences** (`/api/*` + `/mcp`), and an **M2M application** for the Management API. **Full step-by-step in [Auth0 tenant setup](#auth0-tenant-setup-per-environment) below.** Magic-link emails are read from the **Auth0 tenant log**, not MailCatcher (see [`email-catcher.md`](email-catcher.md)). |
 
 **Env files to create** (copy the committed `.env.example`s; all are git-ignored):
 `./.env` (set `POSTGRES_PASSWORD`), `apps/backend/.env`, `apps/frontend/.env`.
 
 > **Not required in dev:** Resend, Tigris, Fly, Netlify — all substituted by the Docker services or
 > not exercised locally.
+
+---
+
+## Auth0 tenant setup (per environment)
+
+The exact objects to create **inside each tenant** (`ArtifactHub-Dev`, then `ArtifactHub-Prod`).
+The *structure* is identical across environments; only the **URLs and audience values** differ (dev
+= localhost, prod = real hostnames). Do this once per tenant. Full rationale in
+[`02` §1/§1.1](../architecture/02-auth-identity-and-admin.md).
+
+### 1. Applications (OAuth clients)
+
+- **SPA application** — **Application Type MUST be _Single Page Application_** (public client,
+  Authorization Code **+ PKCE**, *no* client secret). **Not** "Regular Web Application" / a
+  server-side (Next.js) quickstart — that type expects a client secret and a server callback and
+  will not work with our browser-only Vite SPA.
+  - **Allowed Callback URLs**, **Allowed Logout URLs**, **Allowed Web Origins** = the **SPA origin**
+    (dev: `http://localhost:5173` — the **Vite** port, *not* the backend's `:3081`). `@auth0/auth0-react`
+    redirects to the app origin, so no `/callback` server route is needed.
+  - Client ID → `VITE_AUTH0_CLIENT_ID` (frontend). No secret is used by the SPA.
+- **M2M application** — a **separate** "Machine to Machine" app (not the SPA) for invitation
+  provisioning ([`02` §4/§6](../architecture/02-auth-identity-and-admin.md)).
+  - **Authorize it for the _Auth0 Management API_** and grant scopes **`create:users`, `read:users`,
+    `update:users`** (Applications → *M2M app* → **APIs** tab). Client ID/secret alone are not enough
+    without this grant.
+  - Client ID + Secret → `AUTH0_MGMT_CLIENT_ID` / `AUTH0_MGMT_CLIENT_SECRET` (backend; **dev `.env`,
+    prod `fly secrets`**). Optional in [`env.ts`](../../apps/backend/src/env.ts) so the backend boots
+    without them for login-only runs.
+- **MCP clients (Claude, Role B)** register **themselves** at runtime via **DCR** — do **not** create
+  an app for them. (DCR is enabled later, in the MCP phase — see [`02` §1](../architecture/02-auth-identity-and-admin.md).)
+
+### 2. APIs (audiences / resource servers)
+
+Register **two** APIs. An API **Identifier is an opaque string** (URI-shaped, never actually fetched
+by Auth0) that lands in the token's `aud`. Each value must be **byte-identical in all three places**
+it appears, or tokens are rejected on audience mismatch:
+
+| API (resource) | Dev Identifier | Must match in |
+|---|---|---|
+| App API (`/api/*`) | `http://localhost:3081/api` | Auth0 Identifier · backend `AUTH0_API_AUDIENCE` · frontend `VITE_AUTH0_AUDIENCE` |
+| MCP resource (`/mcp`) | `http://localhost:3081/mcp` | Auth0 Identifier · backend `AUTH0_MCP_AUDIENCE` (**backend only** — the SPA never requests it) |
+
+- The MCP Identifier **must be an absolute URI** (required by RFC 8707 + the MCP spec, [`02` §1](../architecture/02-auth-identity-and-admin.md)).
+- Localhost identifiers are fine for dev; prod uses the real hostnames (or a stable logical URI) —
+  just keep the three-way match and don't mix schemes.
+
+### 3. Passwordless connection
+
+- **Authentication → Passwordless → Email**: enable, then **attach it to the SPA application**
+  (the connection's **Applications** tab, or the app's **Connections** tab).
+- **Disable Sign Ups** on the connection — enforces the admin-invite-only user set (**R1**,
+  [`02` §1.1](../architecture/02-auth-identity-and-admin.md)).
+- Dev magic-link emails arrive at the **real inbox** (e.g. an `INITIAL_ADMIN_EMAILS` address) /
+  the **Auth0 log** — **MailCatcher does not catch them** (it's Auth0-sent, not backend-sent).
+- **MCP phase only (future):** to enable DCR, the passwordless email connection must be **promoted
+  to domain-level** (DCR clients are third-party apps limited to domain-level connections). Not
+  needed for SPA login.
+
+### 4. Env value mapping (quick reference)
+
+| Auth0 object | Backend `apps/backend/.env` | Frontend `apps/frontend/.env` |
+|---|---|---|
+| Tenant domain (**bare host, no `https://`** — the Management API SDK expects it) | `AUTH0_DOMAIN` | `VITE_AUTH0_DOMAIN` |
+| SPA app Client ID | — | `VITE_AUTH0_CLIENT_ID` |
+| App API Identifier | `AUTH0_API_AUDIENCE` | `VITE_AUTH0_AUDIENCE` |
+| MCP API Identifier | `AUTH0_MCP_AUDIENCE` | — |
+| M2M app Client ID / Secret | `AUTH0_MGMT_CLIENT_ID` / `AUTH0_MGMT_CLIENT_SECRET` | — |
+
+> Prod (`ArtifactHub-Prod`): same objects in a **separate tenant**; callback/logout/origin URLs use
+> the **Netlify/custom domain**, and the M2M secret + client secret live in **`fly secrets`**, never
+> committed. See [`Production`](#production) below and the [deploy runbook](deploy-runbook.md).
 
 ---
 

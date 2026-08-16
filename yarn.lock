@@ -2848,6 +2848,7 @@ __metadata:
     "@types/supertest": "npm:^6.0.2"
     contracts: "workspace:*"
     cross-env: "npm:^7.0.3"
+    dotenv: "npm:^16.6.1"
     eslint: "npm:^9.17.0"
     express: "npm:^4.21.2"
     jest: "npm:^29.7.0"

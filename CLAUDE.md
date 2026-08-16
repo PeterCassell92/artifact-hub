@@ -77,7 +77,8 @@ package.json      root: private, workspaces + fan-out scripts
 Docs map: [architecture/](docs/architecture/) (decisions, entry point `01`), [models/](docs/models/)
 (field-level domain models — schema source of truth), [frontend/](docs/frontend/) (UX; no publish
 UI), [user-journeys/](docs/user-journeys/) (BDD), [development/](docs/development/) (dev tooling +
-[dev-and-testing-phases-guide.md](docs/development/dev-and-testing-phases-guide.md): local stack,
+[implementation-plan.md](docs/development/implementation-plan.md): **build order / handoff plan —
+start here when implementing**; [dev-and-testing-phases-guide.md](docs/development/dev-and-testing-phases-guide.md): local stack,
 test phases, MCP client config; [bruno-mcp-token.md](docs/development/bruno-mcp-token.md): Bruno
 collection to mint an MCP bearer token for manual testing; [environment-prerequisites.md](docs/development/environment-prerequisites.md):
 per-environment external services to set up), [future-features/](docs/future-features/) (speculative

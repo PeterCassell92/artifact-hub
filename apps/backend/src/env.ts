@@ -12,6 +12,14 @@ const EnvSchema = z.object({
   AUTH0_API_AUDIENCE: z.string().min(1),
   AUTH0_MCP_AUDIENCE: z.string().min(1),
 
+  // Auth0 Management API (a SEPARATE Machine-to-Machine app, not the SPA client). Used only at
+  // invitation-accept to create/enable the Auth0 user (docs/architecture/02 §4/§6). Optional so the
+  // backend boots for login-only local runs; the invitation-provisioning code must assert both are
+  // set before calling the Management API. Dev: from the M2M app authorized for the Management API.
+  // Prod: `fly secrets`, never committed.
+  AUTH0_MGMT_CLIENT_ID: z.string().optional(),
+  AUTH0_MGMT_CLIENT_SECRET: z.string().optional(),
+
   // Email is SMTP everywhere: MailCatcher (no auth) in dev, Resend (auth) in prod. No `ses` branch.
   EMAIL_TRANSPORT: z.enum(["smtp"]).default("smtp"),
   SMTP_HOST: z.string().default("localhost"),

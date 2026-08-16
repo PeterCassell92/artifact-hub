@@ -1,3 +1,6 @@
+// Load apps/backend/.env into process.env BEFORE anything reads it (getEnv, logger).
+// No-ops safely in prod (Fly injects real env; dotenv never overrides existing vars).
+import "dotenv/config";
 import { createApp } from "./app.js";
 import { getEnv } from "./env.js";
 import { logger } from "./logger.js";
