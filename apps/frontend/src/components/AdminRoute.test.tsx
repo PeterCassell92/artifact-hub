@@ -27,7 +27,7 @@ describe("AdminRoute", () => {
   it("hides admin routes from a non-admin member (redirects to /)", () => {
     useGetMeQuery.mockReturnValue({
       isLoading: false,
-      data: { id: "u1", email: "m@test.local", name: null, role: "member", status: "active", groupNames: [] },
+      data: { id: "u1", email: "m@test.local", name: null, role: "member", status: "active", groupNames: [], createdAt: "2026-01-01T00:00:00.000Z" },
     });
 
     renderRoute();
@@ -39,7 +39,7 @@ describe("AdminRoute", () => {
   it("renders admin routes for an admin", () => {
     useGetMeQuery.mockReturnValue({
       isLoading: false,
-      data: { id: "u1", email: "a@test.local", name: null, role: "admin", status: "active", groupNames: [] },
+      data: { id: "u1", email: "a@test.local", name: null, role: "admin", status: "active", groupNames: [], createdAt: "2026-01-01T00:00:00.000Z" },
     });
 
     renderRoute();

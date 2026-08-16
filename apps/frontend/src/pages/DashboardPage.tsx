@@ -30,8 +30,9 @@ export function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-900">
+      <h1 className="flex items-center gap-2 text-lg font-semibold text-neutral-900">
         {me ? `Welcome, ${me.name ?? me.email}` : "Welcome"}
+        <img src="/icon-waving-hand.svg" alt="" className="h-6 w-6" />
       </h1>
 
       {isEmpty && (

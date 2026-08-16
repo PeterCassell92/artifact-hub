@@ -1,34 +1,51 @@
-import { useState } from "react";
-import { useGetSharedWithMeQuery } from "../store/api";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useGetArtifactFacetsQuery, useGetSharedWithMeQuery, type ArtifactListFilters } from "../store/api";
+import { ArtifactFilters } from "../components/ArtifactFilters";
 import { ArtifactListItem } from "../components/ArtifactListItem";
+import { parseArtifactFilters, serializeArtifactFilters } from "../lib/artifactFilters";
+
+function hasActiveFilters(filters: ArtifactListFilters): boolean {
+  return Boolean(
+    filters.q ||
+      (filters.sort && filters.sort !== "published") ||
+      filters.kind?.length ||
+      filters.contentType?.length ||
+      filters.tags?.length ||
+      filters.sourceTool?.length ||
+      filters.publisherId?.length ||
+      filters.sinceHours,
+  );
+}
 
 /** Artifacts shared to me directly or via my groups (docs/frontend/01 §5), mirroring the MCP
- * `list_shared_with_me` tool, incl. its "last 24 hours" quick filter. */
+ * `list_shared_with_me` tool, with the full search/facet/sort surface (Phase 7) including the
+ * "shared window" quick presets. Filter state lives in the URL so the view is shareable. */
 export function SharedWithMePage() {
-  const [last24h, setLast24h] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = useMemo(() => parseArtifactFilters(searchParams), [searchParams]);
   const [cursors, setCursors] = useState<string[]>([]);
   const cursor = cursors.at(-1);
-  const { data, isLoading, isFetching } = useGetSharedWithMeQuery({
-    sinceHours: last24h ? 24 : undefined,
-    cursor,
-  });
+  const { data, isLoading, isFetching } = useGetSharedWithMeQuery({ ...filters, cursor });
+  const { data: facets } = useGetArtifactFacetsQuery({ scope: "sharedWithMe" });
 
-  function toggleLast24h() {
+  function handleFiltersChange(next: ArtifactListFilters) {
     setCursors([]);
-    setLast24h((prev) => !prev);
+    setSearchParams(serializeArtifactFilters(next), { replace: true });
   }
+
+  const filtered = hasActiveFilters(filters);
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Shared With Me</h1>
-          <p className="mt-1 text-sm text-neutral-600">Artifacts others have shared to you or your groups.</p>
-        </div>
-        <label className="flex items-center gap-2 text-sm text-neutral-700">
-          <input type="checkbox" checked={last24h} onChange={toggleLast24h} />
-          Last 24 hours
-        </label>
+      <h1 className="flex items-center gap-2 text-lg font-semibold text-neutral-900">
+        Shared With Me
+        <img src="/icon-handshake.svg" alt="" className="h-6 w-6" />
+      </h1>
+      <p className="mt-1 text-sm text-neutral-600">Artifacts others have shared to you or your groups.</p>
+
+      <div className="mt-4">
+        <ArtifactFilters scope="sharedWithMe" value={filters} onChange={handleFiltersChange} facets={facets} />
       </div>
 
       {isLoading && (
@@ -39,7 +56,7 @@ export function SharedWithMePage() {
 
       {!isLoading && data?.items.length === 0 && (
         <div className="mt-6 rounded-md border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
-          {last24h ? "Nothing shared with you in the last 24 hours." : "Nothing has been shared with you yet."}
+          {filtered ? "No artifacts match these filters." : "Nothing has been shared with you yet."}
         </div>
       )}
 

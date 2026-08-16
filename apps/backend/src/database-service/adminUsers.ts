@@ -22,6 +22,7 @@ export function toUserView(user: UserWithGroups): UserView {
     role: user.role,
     status: user.status,
     groupNames: user.memberships.map((m) => m.group.name),
+    createdAt: user.createdAt.toISOString(),
   };
 }
 

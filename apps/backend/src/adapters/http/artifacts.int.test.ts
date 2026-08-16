@@ -47,6 +47,12 @@ describe("GET /api/artifacts*", () => {
   async function makeArtifact(over: {
     ownerId: string;
     title?: string;
+    description?: string;
+    fileName?: string;
+    contentType?: string;
+    kind?: "diagram" | "document" | "image" | "report" | "data" | "other";
+    sourceTool?: string;
+    tags?: string[];
     audienceType?: "public_authenticated" | "specific_users" | "user_groups";
     expiresAt?: Date | null;
     allowedUserIds?: string[];
@@ -56,8 +62,11 @@ describe("GET /api/artifacts*", () => {
       data: {
         ownerId: over.ownerId,
         title: over.title ?? "Untitled",
-        fileName: "report.pdf",
-        contentType: "application/pdf",
+        description: over.description,
+        fileName: over.fileName ?? "report.pdf",
+        contentType: over.contentType ?? "application/pdf",
+        kind: over.kind ?? "other",
+        sourceTool: over.sourceTool,
         storageKey: `artifacts/${Math.random()}`,
         sizeBytes: BigInt(1024),
         audienceType: over.audienceType ?? "specific_users",
@@ -70,6 +79,10 @@ describe("GET /api/artifacts*", () => {
     }
     for (const groupId of over.allowedGroupIds ?? []) {
       await prisma.artifactAllowedGroup.create({ data: { artifactId: artifact.id, groupId } });
+    }
+    for (const name of over.tags ?? []) {
+      const tag = await prisma.tag.upsert({ where: { name }, update: {}, create: { name } });
+      await prisma.artifactTag.create({ data: { artifactId: artifact.id, tagId: tag.id } });
     }
 
     return artifact;
@@ -148,6 +161,184 @@ describe("GET /api/artifacts*", () => {
       const titles = res.body.items.map((a: { title: string }) => a.title);
       expect(titles).toContain(recentTitle);
       expect(titles).not.toContain(oldTitle);
+    });
+  });
+
+  describe("GET /api/artifacts — filters/sort (Phase 7)", () => {
+    it("q matches title, description, and fileName", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const marker = `zzq${Math.random().toString(36).slice(2)}`;
+      const byTitle = await makeArtifact({ ownerId: owner.id, title: `Report ${marker}` });
+      const byDescription = await makeArtifact({
+        ownerId: owner.id,
+        title: "Untitled",
+        description: `notes about ${marker}`,
+      });
+      const byFileName = await makeArtifact({ ownerId: owner.id, fileName: `${marker}.pdf` });
+      const nonMatch = await makeArtifact({ ownerId: owner.id, title: "Unrelated" });
+
+      const res = await request(app)
+        .get(`/api/artifacts?q=${marker}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      const ids = res.body.items.map((a: { id: string }) => a.id);
+      expect(ids).toEqual(expect.arrayContaining([byTitle.id, byDescription.id, byFileName.id]));
+      expect(ids).not.toContain(nonMatch.id);
+    });
+
+    it("contentType, kind, sourceTool, and tags filter down My Artifacts", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const tag = `tag-${Math.random()}`;
+      const match = await makeArtifact({
+        ownerId: owner.id,
+        contentType: "image/png",
+        kind: "image",
+        sourceTool: "Claude Desktop",
+        tags: [tag],
+      });
+      const nonMatch = await makeArtifact({ ownerId: owner.id, contentType: "application/pdf", kind: "document" });
+
+      async function idsFor(query: string) {
+        const res = await request(app)
+          .get(`/api/artifacts?${query}`)
+          .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+          .expect(200);
+        return res.body.items.map((a: { id: string }) => a.id);
+      }
+
+      expect(await idsFor("contentType=image%2Fpng")).toEqual([match.id]);
+      expect(await idsFor("kind=image")).toEqual([match.id]);
+      expect(await idsFor("sourceTool=Claude%20Desktop")).toEqual([match.id]);
+      expect(await idsFor(`tags=${tag}`)).toEqual([match.id]);
+      expect(await idsFor("kind=document")).toEqual([nonMatch.id]);
+    });
+
+    it("audienceType and isExpired filter My Artifacts (ignored on Shared With Me)", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const publicOne = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+      const expiredOne = await makeArtifact({ ownerId: owner.id, expiresAt: past });
+
+      const byAudience = await request(app)
+        .get("/api/artifacts?audienceType=public_authenticated")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(byAudience.body.items.map((a: { id: string }) => a.id)).toEqual([publicOne.id]);
+
+      const expired = await request(app)
+        .get("/api/artifacts?isExpired=true")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(expired.body.items.map((a: { id: string }) => a.id)).toEqual([expiredOne.id]);
+
+      const active = await request(app)
+        .get("/api/artifacts?isExpired=false")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      const activeIds = active.body.items.map((a: { id: string }) => a.id);
+      expect(activeIds).toContain(publicOne.id);
+      expect(activeIds).not.toContain(expiredOne.id);
+    });
+
+    it("publisherId filters Shared With Me to the selected owner(s)", async () => {
+      const ownerA = await makeActiveUser(`ownera-${Math.random()}@test.local`);
+      const ownerB = await makeActiveUser(`ownerb-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const fromA = await makeArtifact({ ownerId: ownerA.id, audienceType: "public_authenticated" });
+      const fromB = await makeArtifact({ ownerId: ownerB.id, audienceType: "public_authenticated" });
+
+      const res = await request(app)
+        .get(`/api/artifacts?scope=sharedWithMe&publisherId=${ownerA.id}`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(200);
+
+      const ids = res.body.items.map((a: { id: string }) => a.id);
+      expect(ids).toContain(fromA.id);
+      expect(ids).not.toContain(fromB.id);
+    });
+
+    it("sort=title orders alphabetically and sort=size orders by sizeBytes desc", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const marker = Math.random().toString(36).slice(2);
+      const a = await makeArtifact({ ownerId: owner.id, title: `A-${marker}` });
+      const b = await makeArtifact({ ownerId: owner.id, title: `B-${marker}` });
+      await prisma.artifact.update({ where: { id: a.id }, data: { sizeBytes: BigInt(9999) } });
+      await prisma.artifact.update({ where: { id: b.id }, data: { sizeBytes: BigInt(1) } });
+
+      const byTitle = await request(app)
+        .get(`/api/artifacts?q=${marker}&sort=title`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(byTitle.body.items.map((x: { id: string }) => x.id)).toEqual([a.id, b.id]);
+
+      const bySize = await request(app)
+        .get(`/api/artifacts?q=${marker}&sort=size`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(bySize.body.items.map((x: { id: string }) => x.id)).toEqual([a.id, b.id]);
+    });
+
+    it("sort=lastAccessed orders by the most recently (allowed-)accessed artifact first", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const marker = Math.random().toString(36).slice(2);
+      const stale = await makeArtifact({ ownerId: owner.id, title: `Stale-${marker}` });
+      const fresh = await makeArtifact({ ownerId: owner.id, title: `Fresh-${marker}` });
+      const neverAccessed = await makeArtifact({ ownerId: owner.id, title: `Never-${marker}` });
+
+      // GET /api/artifacts/:id records an allowed AccessEvent and touches lastAccessedAt.
+      await request(app)
+        .get(`/api/artifacts/${stale.id}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      await request(app)
+        .get(`/api/artifacts/${fresh.id}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      const res = await request(app)
+        .get(`/api/artifacts?q=${marker}&sort=lastAccessed`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      const ids = res.body.items.map((x: { id: string }) => x.id);
+      expect(ids.indexOf(fresh.id)).toBeLessThan(ids.indexOf(stale.id));
+      expect(ids.indexOf(stale.id)).toBeLessThan(ids.indexOf(neverAccessed.id));
+    });
+  });
+
+  describe("GET /api/artifacts/facets", () => {
+    it("returns distinct contentType/tag/sourceTool values visible to the caller (scope=mine)", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const marker = `facet-${Math.random()}`;
+      await makeArtifact({
+        ownerId: owner.id,
+        contentType: `application/${marker}`,
+        sourceTool: `Tool-${marker}`,
+        tags: [marker],
+      });
+
+      const res = await request(app)
+        .get("/api/artifacts/facets?scope=mine")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      expect(res.body.contentTypes).toContain(`application/${marker}`);
+      expect(res.body.sourceTools).toContain(`Tool-${marker}`);
+      expect(res.body.tags).toContain(marker);
+      expect(res.body.publishers).toEqual([]);
+    });
+
+    it("returns distinct publishers for scope=sharedWithMe", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      const res = await request(app)
+        .get("/api/artifacts/facets?scope=sharedWithMe")
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(200);
+
+      expect(res.body.publishers.map((p: { id: string }) => p.id)).toContain(owner.id);
     });
   });
 

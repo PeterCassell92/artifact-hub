@@ -6,6 +6,11 @@
       <stop offset="0%" stop-color="#FFFFFF" />
       <stop offset="100%" stop-color="#F2F0EA" />
     </radialGradient>
+    <radialGradient id="badgeEdgeShadow" cx="50%" cy="50%" r="50%">
+      <stop offset="78%" stop-color="#000000" stop-opacity="0" />
+      <stop offset="94%" stop-color="#000000" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.22" />
+    </radialGradient>
     <filter id="badgeShadow" x="-30%" y="-30%" width="160%" height="160%">
       <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000000" flood-opacity="0.14" />
     </filter>
@@ -13,6 +18,8 @@
 
   <!-- soft white circular badge -->
   <circle cx="120" cy="120" r="112" fill="url(#badgeGrad)" filter="url(#badgeShadow)" />
+  <!-- shadowy inner rim along the badge edge -->
+  <circle cx="120" cy="120" r="112" fill="url(#badgeEdgeShadow)" />
 
   <!-- axle -->
   <line x1="70" y1="172" x2="170" y2="172" stroke="#5A3A22" stroke-width="6" stroke-linecap="round" />

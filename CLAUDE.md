@@ -83,7 +83,8 @@ test phases, MCP client config; [bruno-mcp-token.md](docs/development/bruno-mcp-
 collection to mint an MCP bearer token for manual testing; [environment-prerequisites.md](docs/development/environment-prerequisites.md):
 per-environment external services to set up; [Auth0configuration.md](docs/development/Auth0configuration.md):
 Dynamic Client Registration + Resource Parameter Compatibility Profile setup for real MCP OAuth
-logins), [future-features/](docs/future-features/) (speculative
+logins; [logging-out-mcp.md](docs/development/logging-out-mcp.md): fully logging out of an MCP
+OAuth session / switching Auth0 accounts via `/v2/logout`), [future-features/](docs/future-features/) (speculative
 post-v1 ideas, e.g. [AI-features.md](docs/future-features/AI-features.md): server-side LLM inference
 over the artifact corpus).
 

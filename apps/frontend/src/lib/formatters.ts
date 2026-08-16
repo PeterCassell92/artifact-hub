@@ -23,6 +23,23 @@ export function audienceLabel(audienceType: ArtifactSummary["audienceType"]): st
   }
 }
 
+export function kindLabel(kind: ArtifactSummary["kind"]): string {
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
+export function sortLabel(sort: "published" | "title" | "lastAccessed" | "size"): string {
+  switch (sort) {
+    case "published":
+      return "Newest first";
+    case "title":
+      return "Title (A–Z)";
+    case "lastAccessed":
+      return "Recently accessed";
+    case "size":
+      return "Size (largest first)";
+  }
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];

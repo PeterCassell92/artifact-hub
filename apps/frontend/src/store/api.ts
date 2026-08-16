@@ -2,6 +2,8 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type {
   AccessPolicyInput,
   ArtifactDetail,
+  ArtifactFacetOptions,
+  ArtifactListQuery,
   ArtifactListResponse,
   ChangeRoleInput,
   CommentView,
@@ -15,6 +17,15 @@ import type {
   ShareLinkView,
   UserView,
 } from "contracts";
+
+/** The filter/sort part of ArtifactListQuery — everything except `scope`/`cursor`/`limit`, which
+ * each list endpoint below takes as its own params (docs/frontend/02, implementation-plan.md
+ * Phase 7). Shared by both list endpoints so one filter bar's state fits either page. `sort` is
+ * made optional here (the zod schema defaults it server-side) so callers that just want "the
+ * usual order" — e.g. DashboardPage's top-N previews — don't have to name a default. */
+export type ArtifactListFilters = Omit<ArtifactListQuery, "scope" | "cursor" | "limit" | "sort"> & {
+  sort?: ArtifactListQuery["sort"];
+};
 import { getAccessToken } from "../auth/tokenBridge";
 import { API_BASE_URL } from "../config";
 
@@ -40,28 +51,35 @@ export const api = createApi({
       providesTags: ["Me"],
     }),
 
-    getMyArtifacts: builder.query<ArtifactListResponse, { cursor?: string; limit?: number }>({
-      query: ({ cursor, limit } = {}) => ({
+    getMyArtifacts: builder.query<
+      ArtifactListResponse,
+      ArtifactListFilters & { cursor?: string; limit?: number }
+    >({
+      query: ({ cursor, limit, ...filters }) => ({
         url: "/artifacts",
-        params: { scope: "mine", ...(cursor ? { cursor } : {}), ...(limit ? { limit } : {}) },
+        params: { scope: "mine", ...filters, ...(cursor ? { cursor } : {}), ...(limit ? { limit } : {}) },
       }),
       providesTags: ["ArtifactList"],
     }),
 
     getSharedWithMe: builder.query<
       ArtifactListResponse,
-      { sinceHours?: number; cursor?: string; limit?: number }
+      ArtifactListFilters & { cursor?: string; limit?: number }
     >({
-      query: ({ sinceHours, cursor, limit } = {}) => ({
+      query: ({ cursor, limit, ...filters }) => ({
         url: "/artifacts",
         params: {
           scope: "sharedWithMe",
-          ...(sinceHours ? { sinceHours } : {}),
+          ...filters,
           ...(cursor ? { cursor } : {}),
           ...(limit ? { limit } : {}),
         },
       }),
       providesTags: ["ArtifactList"],
+    }),
+
+    getArtifactFacets: builder.query<ArtifactFacetOptions, { scope: "mine" | "sharedWithMe" }>({
+      query: ({ scope }) => ({ url: "/artifacts/facets", params: { scope } }),
     }),
 
     getArtifact: builder.query<ArtifactDetail, string>({
@@ -161,6 +179,7 @@ export const {
   useGetMeQuery,
   useGetMyArtifactsQuery,
   useGetSharedWithMeQuery,
+  useGetArtifactFacetsQuery,
   useGetArtifactQuery,
   useGetCommentsQuery,
   useAddCommentMutation,

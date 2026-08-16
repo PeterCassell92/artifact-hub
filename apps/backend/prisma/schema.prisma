@@ -163,6 +163,11 @@ model Artifact {
 
   createdAt DateTime @default(now())
 
+  // Denormalized from AccessEvent (max allowed view/download `at`) so `sort=lastAccessed`
+  // (docs/frontend/02 §3) can be a plain indexed column instead of a per-request aggregate —
+  // docs/models/artifact.md §4 lists this as "derived", logged here as the storage deviation.
+  lastAccessedAt DateTime?
+
   owner         User                   @relation("owner", fields: [ownerId], references: [id])
   allowedUsers  ArtifactAllowedUser[]
   allowedGroups ArtifactAllowedGroup[]
@@ -178,6 +183,8 @@ model Artifact {
   @@index([expiresAt])
   @@index([kind])
   @@index([sourceTool])
+  @@index([contentType])
+  @@index([lastAccessedAt])
 }
 
 model ArtifactAllowedUser {
@@ -217,6 +224,7 @@ model ArtifactTag {
   tag      Tag      @relation(fields: [tagId], references: [id])
 
   @@id([artifactId, tagId])
+  @@index([tagId])
 }
 
 model Comment {

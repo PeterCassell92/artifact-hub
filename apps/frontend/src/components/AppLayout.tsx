@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { NotificationRegion } from "./NotificationRegion";
+import { UserProfilePopover } from "./UserProfilePopover";
 import { useGetMeQuery } from "../store/api";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -21,28 +22,30 @@ export function AppLayout() {
       <NotificationRegion />
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
-          <nav className="flex items-center gap-1">
-            <NavLink to="/" end className={({ isActive }) => "flex items-center gap-2 " + navLinkClass({ isActive })}>
-              <img src="/logo.svg" alt="" className="h-7 w-7" />
-              Artifact Hub
-            </NavLink>
-            <NavLink to="/get-started" className={navLinkClass}>
-              Get Started
-            </NavLink>
-            <NavLink to="/artifacts" className={navLinkClass}>
-              My Artifacts
-            </NavLink>
-            <NavLink to="/shared" className={navLinkClass}>
-              Shared With Me
-            </NavLink>
-          </nav>
+          <div className="flex items-center gap-4">
+            <img src="/logo.svg" alt="Artifact Hub" className="h-8 w-8" />
+            <nav className="flex items-center gap-1">
+              <NavLink to="/" end className={navLinkClass}>
+                Artifact Hub
+              </NavLink>
+              <NavLink to="/get-started" className={navLinkClass}>
+                Get Started
+              </NavLink>
+              <NavLink to="/artifacts" className={navLinkClass}>
+                My Artifacts
+              </NavLink>
+              <NavLink to="/shared" className={navLinkClass}>
+                Shared With Me
+              </NavLink>
+            </nav>
+          </div>
           <div className="flex items-center gap-3 text-sm text-neutral-600">
             {me?.role === "admin" && (
               <NavLink to="/admin/users" className={adminLinkClass}>
                 Admin
               </NavLink>
             )}
-            {me && <span>{me.name ?? me.email}</span>}
+            {me && <UserProfilePopover user={me} />}
             <button
               type="button"
               onClick={() => void logout({ logoutParams: { returnTo: window.location.origin } })}

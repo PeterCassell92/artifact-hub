@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 const emptyList = { data: { items: [], nextCursor: null } };
 jest.unstable_mockModule("../store/api", () => ({
-  useGetMeQuery: () => ({ data: { id: "u1", email: "ada@test.local", name: "Ada", role: "member", status: "active", groupNames: [] } }),
+  useGetMeQuery: () => ({ data: { id: "u1", email: "ada@test.local", name: "Ada", role: "member", status: "active", groupNames: [], createdAt: "2026-01-01T00:00:00.000Z" } }),
   useGetMyArtifactsQuery: () => emptyList,
   useGetSharedWithMeQuery: () => emptyList,
 }));

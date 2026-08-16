@@ -58,6 +58,7 @@ describe("AdminUsersPage", () => {
         role: "admin",
         status: "active",
         groupNames: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
     });
     useGetUsersQuery.mockReturnValue({
@@ -69,6 +70,7 @@ describe("AdminUsersPage", () => {
           role: "member",
           status: "active",
           groupNames: ["Engineering"],
+          createdAt: "2026-01-01T00:00:00.000Z",
         },
       ],
     });
@@ -146,6 +148,7 @@ describe("AdminUsersPage", () => {
           role: "admin",
           status: "active",
           groupNames: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
         },
         {
           id: "user-1",
@@ -154,6 +157,7 @@ describe("AdminUsersPage", () => {
           role: "member",
           status: "active",
           groupNames: ["Engineering"],
+          createdAt: "2026-01-01T00:00:00.000Z",
         },
       ],
     });

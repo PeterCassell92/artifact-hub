@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <title>Artifact Hub artifact icon: single faceted diamond</title>
+
+  <g stroke="#2E7DA3" stroke-width="4" stroke-linejoin="round">
+    <polygon points="60,15 60,105 30,60" fill="#BDEEFF" />
+    <polygon points="60,15 60,105 90,60" fill="#6FCBEF" />
+  </g>
+
+  <!-- sparkles -->
+  <path d="M40,28 L41.8,32.2 L46,34 L41.8,35.8 L40,40 L38.2,35.8 L34,34 L38.2,32.2 Z" fill="#FFFFFF" opacity="0.9" />
+  <path d="M80,38 L81.4,41.2 L84.6,42.6 L81.4,44 L80,47.2 L78.6,44 L75.4,42.6 L78.6,41.2 Z" fill="#FFFFFF" opacity="0.85" />
+</svg>

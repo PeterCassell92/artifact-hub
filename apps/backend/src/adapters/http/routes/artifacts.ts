@@ -3,8 +3,9 @@ import { z } from "zod";
 import {
   AccessPolicyInput,
   ArtifactDetail,
+  ArtifactFacetOptions,
+  ArtifactListQuery,
   ArtifactListResponse,
-  ArtifactListSupportedQuery,
   CommentView,
   CreateCommentInput,
   DownloadUrlResponse,
@@ -15,6 +16,7 @@ import { computeExpiresAt } from "../../../core/policy";
 import {
   checkViewAndAudit,
   findArtifactForDetail,
+  getArtifactFacets,
   listOwnedArtifacts,
   listSharedWithMe,
   resolveAudienceInput,
@@ -35,28 +37,39 @@ const IdParams = z.object({ id: z.string().uuid() });
 export function createArtifactsRouter(): Router {
   const router = Router();
 
-  // GET /api/artifacts — "My Artifacts" (owner's own) + "Shared With Me"; see
-  // implementation-plan.md Phase 6 and ArtifactListSupportedQuery's own doc comment for why
-  // full search/facets/sort aren't supported yet (Phase 7).
+  // GET /api/artifacts — "My Artifacts" (owner's own) + "Shared With Me", with the full
+  // search/facet/sort surface (implementation-plan.md Phase 7, docs/frontend/02). Filters that
+  // don't apply to the current scope (see ArtifactListQuery's doc comment) are silently ignored
+  // by the DAL rather than rejected, so one control set works for both pages.
   router.get("/", async (req, res) => {
-    const parsed = ArtifactListSupportedQuery.safeParse(req.query);
+    const parsed = ArtifactListQuery.safeParse(req.query);
     if (!parsed.success) {
       sendError(res, 400, "bad_request", "Invalid query", parsed.error.flatten());
       return;
     }
 
     const viewer = req.viewer!;
+    const { scope, cursor, limit, ...filters } = parsed.data;
     const { items, nextCursor } =
-      parsed.data.scope === "mine"
-        ? await listOwnedArtifacts(viewer.id, { limit: parsed.data.limit, cursor: parsed.data.cursor })
-        : await listSharedWithMe(viewer, {
-            sinceHours: parsed.data.sinceHours,
-            limit: parsed.data.limit,
-            cursor: parsed.data.cursor,
-          });
+      scope === "mine"
+        ? await listOwnedArtifacts(viewer.id, { ...filters, limit, cursor })
+        : await listSharedWithMe(viewer, { ...filters, limit, cursor });
 
     const now = new Date();
     res.json(ArtifactListResponse.parse({ items: items.map((a) => toSummary(a, now)), nextCursor }));
+  });
+
+  // GET /api/artifacts/facets — distinct filter values the caller can actually use, for
+  // populating the frontend's multi-select controls (Phase 7, docs/frontend/02 §2).
+  router.get("/facets", async (req, res) => {
+    const parsed = z.object({ scope: z.enum(["mine", "sharedWithMe"]).default("mine") }).safeParse(req.query);
+    if (!parsed.success) {
+      sendError(res, 400, "bad_request", "Invalid query", parsed.error.flatten());
+      return;
+    }
+
+    const facets = await getArtifactFacets(req.viewer!, parsed.data.scope);
+    res.json(ArtifactFacetOptions.parse(facets));
   });
 
   // GET /api/artifacts/:id — detail, gated by canView. Records an AccessEvent (allowed + denied).

@@ -55,6 +55,7 @@ describe("GET /api/me", () => {
       role: "admin",
       status: "active",
       groupNames: [group.name],
+      createdAt: user.createdAt.toISOString(),
     });
   });
 

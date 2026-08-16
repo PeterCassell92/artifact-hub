@@ -59,7 +59,7 @@ we capture a broad, mostly-optional set to make discovery powerful:
 | `isExpired` | `expiresAt != null && now >= expiresAt` | UI badge, filters |
 | `viewerCanView` | `canView(currentUser, artifact)` (arch/03) | UI gating |
 | `commentCount` | count of Comments | UI list |
-| `lastAccessedAt` | max(AccessEvent.at) | "recently accessed" |
+| `lastAccessedAt` | max(AccessEvent.at); **stored** (denormalized column, indexed) so `sort=lastAccessed` can cursor-paginate — see architecture/01 §5 decision #45 | "recently accessed" / `sort=lastAccessed` |
 | `publisherName` | join ownerId → User.name | UI/MCP display |
 
 ## 5. Relationships (see collaboration.md)

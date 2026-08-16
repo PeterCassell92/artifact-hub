@@ -9,6 +9,7 @@ export const UserView = z.object({
   role: Role,
   status: UserStatus,
   groupNames: z.array(z.string()),
+  createdAt: z.string().datetime(),
 });
 export type UserView = z.infer<typeof UserView>;
 

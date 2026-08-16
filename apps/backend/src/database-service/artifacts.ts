@@ -41,6 +41,7 @@ function isExpired(expiresAt: Date | null, now: Date): boolean {
 export function toSummary(artifact: ArtifactWithPolicyJoins, now: Date): ArtifactSummary {
   return {
     id: artifact.id,
+    ownerId: artifact.ownerId,
     title: artifact.title,
     fileName: artifact.fileName,
     contentType: artifact.contentType,
@@ -64,7 +65,6 @@ export function toDetail(
   return {
     ...toSummary(artifact, now),
     description: artifact.description,
-    ownerId: artifact.ownerId,
     canManagePolicy: artifact.ownerId === viewerId,
   };
 }
@@ -74,23 +74,145 @@ export interface ListOwnedArtifactsResult {
   nextCursor: string | null;
 }
 
-/** "My Artifacts" — owner's own, newest first (implementation-plan.md Phase 2). */
+/**
+ * The search/facet/sort part of `ArtifactListQuery` (implementation-plan.md Phase 7,
+ * docs/frontend/02-filtering-and-search.md), minus `scope`/`cursor`/`limit` which each list
+ * function takes as its own params. `audienceType`/`isExpired` are only honoured by
+ * `listOwnedArtifacts`; `publisherId` only by `listSharedWithMe` — see `ArtifactListQuery`'s doc
+ * comment in packages/contracts for why the other scope silently ignores them.
+ */
+export interface ArtifactListFilters {
+  q?: string;
+  contentType?: string[];
+  kind?: ArtifactKind[];
+  tags?: string[];
+  sourceTool?: string[];
+  audienceType?: AudienceType[];
+  isExpired?: boolean;
+  publisherId?: string[];
+  sinceHours?: number;
+  sort?: "published" | "title" | "lastAccessed" | "size";
+}
+
+function paginateRows<T extends { id: string }>(
+  rows: T[],
+  limit: number,
+): { items: T[]; nextCursor: string | null } {
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  const last = items.at(-1);
+  return { items, nextCursor: hasMore && last ? last.id : null };
+}
+
+/** Search (`q`) + facet (`contentType`/`kind`/`tags`/`sourceTool`) clauses shared by both list
+ * functions and `getArtifactFacets` — `q` matches title/description/fileName/tags (02 §1). */
+function buildFacetClauses(
+  filters: Pick<ArtifactListFilters, "q" | "contentType" | "kind" | "tags" | "sourceTool">,
+): Prisma.ArtifactWhereInput[] {
+  const clauses: Prisma.ArtifactWhereInput[] = [];
+
+  if (filters.q) {
+    clauses.push({
+      OR: [
+        { title: { contains: filters.q, mode: "insensitive" } },
+        { description: { contains: filters.q, mode: "insensitive" } },
+        { fileName: { contains: filters.q, mode: "insensitive" } },
+        { tags: { some: { tag: { name: { contains: filters.q, mode: "insensitive" } } } } },
+      ],
+    });
+  }
+  if (filters.contentType?.length) clauses.push({ contentType: { in: filters.contentType } });
+  if (filters.kind?.length) clauses.push({ kind: { in: filters.kind } });
+  if (filters.tags?.length) {
+    clauses.push({ tags: { some: { tag: { name: { in: filters.tags } } } } });
+  }
+  if (filters.sourceTool?.length) clauses.push({ sourceTool: { in: filters.sourceTool } });
+
+  return clauses;
+}
+
+function buildOrderBy(sort: ArtifactListFilters["sort"]): Prisma.ArtifactOrderByWithRelationInput[] {
+  switch (sort) {
+    case "title":
+      return [{ title: "asc" }, { id: "asc" }];
+    case "size":
+      return [{ sizeBytes: "desc" }, { id: "desc" }];
+    case "lastAccessed":
+      return [{ lastAccessedAt: { sort: "desc", nulls: "last" } }, { id: "desc" }];
+    case "published":
+    default:
+      return [{ createdAt: "desc" }, { id: "desc" }];
+  }
+}
+
+/**
+ * The base "which artifacts can this viewer see under this scope" clause — shared by the two
+ * list functions and `getArtifactFacets` so facet options never widen beyond what a list call
+ * with the same scope would actually return.
+ */
+function scopeEligibilityWhere(
+  viewerId: string,
+  viewerGroupIds: string[],
+  scope: "mine" | "sharedWithMe",
+  now: Date,
+): Prisma.ArtifactWhereInput {
+  if (scope === "mine") {
+    return { ownerId: viewerId };
+  }
+
+  const audienceClauses: Prisma.ArtifactWhereInput[] = [
+    { audienceType: "public_authenticated" },
+    { audienceType: "specific_users", allowedUsers: { some: { userId: viewerId } } },
+  ];
+  if (viewerGroupIds.length > 0) {
+    audienceClauses.push({
+      audienceType: "user_groups",
+      allowedGroups: { some: { groupId: { in: viewerGroupIds } } },
+    });
+  }
+
+  return {
+    AND: [
+      { ownerId: { not: viewerId } },
+      { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+      { OR: audienceClauses },
+    ],
+  };
+}
+
+/** "My Artifacts" — owner's own (implementation-plan.md Phase 2, extended with filters/sort in
+ * Phase 7). */
 export async function listOwnedArtifacts(
   ownerId: string,
-  { limit, cursor }: { limit: number; cursor?: string },
+  { limit, cursor, ...filters }: ArtifactListFilters & { limit: number; cursor?: string },
 ): Promise<ListOwnedArtifactsResult> {
+  const now = new Date();
+  const since = filters.sinceHours
+    ? new Date(now.getTime() - filters.sinceHours * 60 * 60 * 1000)
+    : undefined;
+
+  const where: Prisma.ArtifactWhereInput = {
+    AND: [
+      scopeEligibilityWhere(ownerId, [], "mine", now),
+      ...buildFacetClauses(filters),
+      ...(since ? [{ createdAt: { gte: since } }] : []),
+      ...(filters.audienceType?.length ? [{ audienceType: { in: filters.audienceType } }] : []),
+      ...(filters.isExpired === true ? [{ expiresAt: { not: null, lte: now } }] : []),
+      ...(filters.isExpired === false
+        ? [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }]
+        : []),
+    ],
+  };
+
   const rows = await prisma.artifact.findMany({
-    where: { ownerId },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    where,
+    orderBy: buildOrderBy(filters.sort),
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     ...withPolicyJoins,
   });
 
-  const hasMore = rows.length > limit;
-  const items = hasMore ? rows.slice(0, limit) : rows;
-  const last = items.at(-1);
-  return { items, nextCursor: hasMore && last ? last.id : null };
+  return paginateRows(rows, limit);
 }
 
 export interface UpdateArtifactPolicyInput {
@@ -311,53 +433,88 @@ export async function finalizeArtifact(
   return { ok: true, artifact: updated! };
 }
 
-export interface ListSharedWithMeInput {
-  sinceHours?: number;
-  cursor?: string;
-  limit: number;
-}
-
 /**
  * "Shared with me" (MCP `list_shared_with_me`, docs/architecture/05 §4): everything visible to
  * the viewer that they don't own, live (not expired — a non-owner can't view an expired artifact
  * regardless of audience, so excluding it here matches `canView`), optionally bounded to the last
- * `sinceHours`.
+ * `sinceHours` and the Phase 7 filters/sort.
  */
 export async function listSharedWithMe(
   viewer: Viewer,
-  { sinceHours, cursor, limit }: ListSharedWithMeInput,
+  { limit, cursor, ...filters }: ArtifactListFilters & { limit: number; cursor?: string },
 ): Promise<ListOwnedArtifactsResult> {
   const now = new Date();
-  const since = sinceHours ? new Date(now.getTime() - sinceHours * 60 * 60 * 1000) : undefined;
+  const since = filters.sinceHours
+    ? new Date(now.getTime() - filters.sinceHours * 60 * 60 * 1000)
+    : undefined;
 
-  const audienceClauses: Prisma.ArtifactWhereInput[] = [
-    { audienceType: "public_authenticated" },
-    { audienceType: "specific_users", allowedUsers: { some: { userId: viewer.id } } },
-  ];
-  if (viewer.groupIds.length > 0) {
-    audienceClauses.push({
-      audienceType: "user_groups",
-      allowedGroups: { some: { groupId: { in: viewer.groupIds } } },
-    });
-  }
+  const where: Prisma.ArtifactWhereInput = {
+    AND: [
+      scopeEligibilityWhere(viewer.id, viewer.groupIds, "sharedWithMe", now),
+      ...buildFacetClauses(filters),
+      ...(since ? [{ createdAt: { gte: since } }] : []),
+      ...(filters.publisherId?.length ? [{ ownerId: { in: filters.publisherId } }] : []),
+    ],
+  };
 
   const rows = await prisma.artifact.findMany({
-    where: {
-      AND: [
-        { ownerId: { not: viewer.id } },
-        { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
-        { OR: audienceClauses },
-        ...(since ? [{ createdAt: { gte: since } }] : []),
-      ],
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    where,
+    orderBy: buildOrderBy(filters.sort),
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     ...withPolicyJoins,
   });
 
-  const hasMore = rows.length > limit;
-  const items = hasMore ? rows.slice(0, limit) : rows;
-  const last = items.at(-1);
-  return { items, nextCursor: hasMore && last ? last.id : null };
+  return paginateRows(rows, limit);
+}
+
+export interface ArtifactFacetOptionsResult {
+  contentTypes: string[];
+  tags: string[];
+  sourceTools: string[];
+  publishers: { id: string; name: string | null }[];
+}
+
+/**
+ * Distinct filter values the viewer can actually use, scoped to the same eligibility as the list
+ * functions (`GET /api/artifacts/facets`) — populates the frontend's multi-select controls with
+ * real values rather than a guessed/fixed catalogue (`contentType` and `tags` are free-form).
+ * Computed against the *unfiltered* scope-eligible set, not the caller's currently-active
+ * filters, so option lists stay stable as the user narrows down (a common faceted-search
+ * simplification — not "counts excluding this facet").
+ */
+export async function getArtifactFacets(
+  viewer: Viewer,
+  scope: "mine" | "sharedWithMe",
+): Promise<ArtifactFacetOptionsResult> {
+  const now = new Date();
+  const where = scopeEligibilityWhere(viewer.id, viewer.groupIds, scope, now);
+
+  const [contentTypeRows, sourceToolRows, tagRows, publisherRows] = await Promise.all([
+    prisma.artifact.findMany({ where, distinct: ["contentType"], select: { contentType: true } }),
+    prisma.artifact.findMany({
+      where: { ...where, sourceTool: { not: null } },
+      distinct: ["sourceTool"],
+      select: { sourceTool: true },
+    }),
+    prisma.tag.findMany({
+      where: { artifacts: { some: { artifact: where } } },
+      distinct: ["name"],
+      select: { name: true },
+    }),
+    scope === "sharedWithMe"
+      ? prisma.artifact.findMany({
+          where,
+          distinct: ["ownerId"],
+          select: { owner: { select: { id: true, name: true } } },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    contentTypes: contentTypeRows.map((r) => r.contentType),
+    tags: tagRows.map((r) => r.name),
+    sourceTools: sourceToolRows.flatMap((r) => (r.sourceTool ? [r.sourceTool] : [])),
+    publishers: publisherRows.map((r) => r.owner),
+  };
 }
