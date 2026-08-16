@@ -27,6 +27,14 @@ export function kindLabel(kind: ArtifactSummary["kind"]): string {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+/** The actual file type (e.g. "JSON"), distinct from `kind`'s coarse publish-time category —
+ * derived from `fileName`'s extension, falling back to the raw MIME `contentType` when there
+ * isn't one. */
+export function fileTypeLabel(artifact: Pick<ArtifactSummary, "fileName" | "contentType">): string {
+  const extension = /\.([a-zA-Z0-9]+)$/.exec(artifact.fileName)?.[1];
+  return extension ? extension.toUpperCase() : artifact.contentType;
+}
+
 export function sortLabel(sort: "published" | "title" | "lastAccessed" | "size"): string {
   switch (sort) {
     case "published":

@@ -10,7 +10,7 @@ import { getPresignedUploadUrl, headObject } from "../storage/s3";
 
 const withPolicyJoins = Prisma.validator<Prisma.ArtifactDefaultArgs>()({
   include: {
-    owner: { select: { id: true, name: true } },
+    owner: { select: { id: true, name: true, email: true } },
     allowedUsers: { select: { userId: true } },
     allowedGroups: { select: { groupId: true } },
     _count: { select: { comments: true } },
@@ -48,7 +48,10 @@ export function toSummary(artifact: ArtifactWithPolicyJoins, now: Date): Artifac
     kind: artifact.kind,
     format: artifact.format,
     sizeBytes: Number(artifact.sizeBytes),
-    publisherName: artifact.owner.name,
+    // `owner.name` is an optional, user-editable display name (may never be set); `owner.email` is
+    // always present for an active account, so it's the fallback rather than "Unknown" — the
+    // artifact is always linked by `ownerId`, this only affects what's shown for that owner.
+    publisherName: artifact.owner.name ?? artifact.owner.email,
     publishedAt: artifact.createdAt.toISOString(),
     audienceType: artifact.audienceType,
     expiresAt: artifact.expiresAt?.toISOString() ?? null,

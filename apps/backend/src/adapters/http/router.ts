@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAdmin, requireAuth } from "../../auth/tokenValidation";
 import { createArtifactsRouter } from "./routes/artifacts";
+import { createGroupsRouter } from "./routes/groups";
 import { createShareLinkRedemptionRouter } from "./routes/shareLinkRedemption";
 import { createAdminRouter } from "./routes/admin";
 import { createMeRouter } from "./routes/me";
@@ -16,6 +17,7 @@ export function createApiRouter(): Router {
   router.use(requireAuth("api"));
 
   router.use("/artifacts", createArtifactsRouter());
+  router.use("/groups", createGroupsRouter());
   router.use("/s", createShareLinkRedemptionRouter());
   router.use("/admin", requireAdmin(), createAdminRouter());
   router.use("/me", createMeRouter());

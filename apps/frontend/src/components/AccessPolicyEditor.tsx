@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AccessPolicyInput, ArtifactDetail, AudienceType, ExpiryOption } from "contracts";
-import { useUpdatePolicyMutation } from "../store/api";
+import { useListGroupsQuery, useUpdatePolicyMutation } from "../store/api";
 import { useAppDispatch } from "../store/hooks";
 import { notify } from "../store/slices/notifications";
 
@@ -18,14 +18,21 @@ function splitList(value: string): string[] {
     .filter(Boolean);
 }
 
+function toggleGroupName(selected: string[], name: string): string[] {
+  return selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name];
+}
+
 /** Audience + expiry (24h/7d/30d/never) — narrowing is what revocation actually is (03 §4),
  * there is no separate "revoke" action. Owner-only, gated by artifact.canManagePolicy. */
 export function AccessPolicyEditor({ artifact }: { artifact: ArtifactDetail }) {
   const [audienceType, setAudienceType] = useState<AudienceType>(artifact.audienceType);
   const [userEmails, setUserEmails] = useState("");
-  const [groupNames, setGroupNames] = useState("");
+  const [groupNames, setGroupNames] = useState<string[]>([]);
   const [expiry, setExpiry] = useState<ExpiryOption>("never");
   const [updatePolicy, { isLoading }] = useUpdatePolicyMutation();
+  // Backend-driven — not the audience owner's own memberships, the full org group catalogue
+  // (matches what the equivalent MCP `list_groups` tool exposes to any authenticated caller).
+  const { data: groups } = useListGroupsQuery(undefined, { skip: audienceType !== "user_groups" });
   const dispatch = useAppDispatch();
 
   async function handleSubmit() {
@@ -33,7 +40,7 @@ export function AccessPolicyEditor({ artifact }: { artifact: ArtifactDetail }) {
       audienceType,
       expiry,
       ...(audienceType === "specific_users" ? { userEmails: splitList(userEmails) } : {}),
-      ...(audienceType === "user_groups" ? { groupNames: splitList(groupNames) } : {}),
+      ...(audienceType === "user_groups" ? { groupNames } : {}),
     };
 
     try {
@@ -74,14 +81,22 @@ export function AccessPolicyEditor({ artifact }: { artifact: ArtifactDetail }) {
         )}
 
         {audienceType === "user_groups" && (
-          <label className="flex flex-col gap-1">
-            Group names (comma-separated)
-            <input
-              value={groupNames}
-              onChange={(e) => setGroupNames(e.target.value)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5"
-            />
-          </label>
+          <fieldset className="flex flex-col gap-1">
+            <legend>Groups</legend>
+            <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-md border border-neutral-300 px-3 py-1.5">
+              {groups?.length === 0 && <p className="text-neutral-500">No groups exist yet.</p>}
+              {groups?.map((group) => (
+                <label key={group.id} className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={groupNames.includes(group.name)}
+                    onChange={() => setGroupNames((prev) => toggleGroupName(prev, group.name))}
+                  />
+                  {group.name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
         )}
 
         <label className="flex flex-col gap-1">

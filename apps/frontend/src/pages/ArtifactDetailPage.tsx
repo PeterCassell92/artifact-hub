@@ -5,7 +5,7 @@ import { CommentForm } from "../components/CommentForm";
 import { CommentList } from "../components/CommentList";
 import { AccessPolicyEditor } from "../components/AccessPolicyEditor";
 import { ShareLinkPanel } from "../components/ShareLinkPanel";
-import { formatBytes, formatPublishedAt } from "../lib/formatters";
+import { fileTypeLabel, formatBytes, formatPublishedAt } from "../lib/formatters";
 
 /** Gated by canView server-side; 403/404 render inline "access ended"/"not found" states rather
  * than a crash — this is the live-revocation UX docs/frontend/01 §8 calls for. */
@@ -56,6 +56,10 @@ export function ArtifactDetailPage() {
         <div>
           <dt className="text-neutral-500">Type</dt>
           <dd className="text-neutral-800">{artifact.format ?? artifact.kind}</dd>
+        </div>
+        <div>
+          <dt className="text-neutral-500">File type</dt>
+          <dd className="text-neutral-800">{fileTypeLabel(artifact)}</dd>
         </div>
         <div>
           <dt className="text-neutral-500">Size</dt>

@@ -351,6 +351,18 @@ describe("GET /api/artifacts*", () => {
         .expect(404);
     });
 
+    it("falls back publisherName to the owner's email when they have no display name set", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      const res = await request(app)
+        .get(`/api/artifacts/${artifact.id}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      expect(res.body.publisherName).toBe(owner.email);
+    });
+
     it("200s for a user in the audience and writes an allowed AccessEvent", async () => {
       const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
       const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);

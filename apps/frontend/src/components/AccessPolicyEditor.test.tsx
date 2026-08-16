@@ -8,8 +8,14 @@ import { makeStore } from "../store/store";
 const unwrap = jest.fn<() => Promise<ArtifactDetail>>();
 const updatePolicy = jest.fn(() => ({ unwrap }));
 
+const groups = [
+  { id: "group-1", name: "Engineering", description: null, createdAt: "2026-01-01T00:00:00.000Z" },
+  { id: "group-2", name: "Design", description: null, createdAt: "2026-01-01T00:00:00.000Z" },
+];
+
 jest.unstable_mockModule("../store/api", () => ({
   useUpdatePolicyMutation: () => [updatePolicy, { isLoading: false }],
+  useListGroupsQuery: () => ({ data: groups }),
 }));
 
 const { AccessPolicyEditor } = await import("./AccessPolicyEditor");
@@ -62,6 +68,25 @@ describe("AccessPolicyEditor", () => {
         audienceType: "specific_users",
         expiry: "7d",
         userEmails: ["a@test.local", "b@test.local"],
+      },
+    });
+  });
+
+  it("builds the user_groups payload from checked, backend-driven groups", async () => {
+    renderWithStore();
+    const user = userEvent.setup();
+
+    await user.selectOptions(screen.getByLabelText(/audience/i), "user_groups");
+    await user.click(screen.getByRole("checkbox", { name: "Engineering" }));
+    await user.selectOptions(screen.getByLabelText(/expiry/i), "never");
+    await user.click(screen.getByRole("button", { name: /save policy/i }));
+
+    expect(updatePolicy).toHaveBeenCalledWith({
+      artifactId: "artifact-1",
+      policy: {
+        audienceType: "user_groups",
+        expiry: "never",
+        groupNames: ["Engineering"],
       },
     });
   });

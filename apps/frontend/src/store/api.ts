@@ -160,6 +160,12 @@ export const api = createApi({
       query: () => "/admin/groups",
       providesTags: ["Group"],
     }),
+    // Non-admin-gated (unlike getGroups → /admin/groups) — feeds AccessPolicyEditor's group
+    // multiselect so any artifact owner can pick real group names, not just admins.
+    listGroups: builder.query<GroupView[], void>({
+      query: () => "/groups",
+      providesTags: ["Group"],
+    }),
     createGroup: builder.mutation<GroupView, CreateGroupInput>({
       query: (body) => ({ url: "/admin/groups", method: "POST", body }),
       invalidatesTags: ["Group"],
@@ -194,6 +200,7 @@ export const {
   useDisableUserMutation,
   useGetGroupsQuery,
   useCreateGroupMutation,
+  useListGroupsQuery,
   useGetInvitationPreviewQuery,
   useAcceptInvitationMutation,
 } = api;
