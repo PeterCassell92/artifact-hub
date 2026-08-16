@@ -4,6 +4,7 @@ import { getEnv } from "./env";
 import { createApiRouter } from "./adapters/http/router";
 import { createInvitationsPublicRouter } from "./adapters/http/routes/invitationsPublic";
 import { mountMcp } from "./adapters/mcp/server";
+import { mountOAuthDiscovery } from "./adapters/mcp/discovery";
 import { createTestMcpTokenRouter } from "./adapters/http/routes/testMcpToken";
 
 /** Builds the Express app (API + MCP) — exported so integration tests can drive it. */
@@ -28,6 +29,7 @@ export function createApp(): Express {
   // /api router below so it's matched first; the invitee has no account/token yet.
   app.use("/api/invitations", createInvitationsPublicRouter());
   app.use("/api", createApiRouter());
+  mountOAuthDiscovery(app);
   mountMcp(app);
 
   // Test-only token mint (docs/development/bruno-mcp-token.md) — never mounted in production.

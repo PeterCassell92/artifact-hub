@@ -15,7 +15,9 @@ const EnvSchema = z.object({
 
   AUTH0_DOMAIN: z.string().min(1),
   AUTH0_API_AUDIENCE: z.string().min(1),
-  AUTH0_MCP_AUDIENCE: z.string().min(1),
+  // Must be an absolute URI (RFC 8707 + MCP spec, docs/architecture/02 §1) — it also doubles as
+  // this resource's own URL for RFC 9728 Protected Resource Metadata (adapters/mcp/discovery.ts).
+  AUTH0_MCP_AUDIENCE: z.string().url(),
 
   // Auth0 Management API (a SEPARATE Machine-to-Machine app, not the SPA client). Used only at
   // invitation-accept to create/enable the Auth0 user (docs/architecture/02 §4/§6). Optional so the

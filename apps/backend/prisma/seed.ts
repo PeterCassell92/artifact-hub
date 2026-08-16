@@ -3,15 +3,14 @@
  *
  *  1. Seeds the initial groups.
  *  2. Creates one admin `users` row per email in INITIAL_ADMIN_EMAILS (comma-separated),
- *     role=admin, status=invited.
- *
- * TODO (implementation): enqueue an OutboxEvent per seeded admin so the invitation email
- * (magic-link sign-in) is sent via the outbox worker. Left out here until the email/outbox
- * modules exist — creating the rows is idempotent and safe on its own.
+ *     role=admin, status=invited, and fires the same "invitation.send" outbox event (and Resend
+ *     email) a normal admin-driven invite would — so a seeded admin accepts + gets their Auth0
+ *     account provisioned exactly like anyone else (`acceptInvitation` already upserts against a
+ *     pre-seeded row, see database-service/invitations.ts). Only for emails that don't already
+ *     have a `users` row — re-running seed must never re-invite/re-email an existing admin.
  */
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "../src/db";
+import { createInvitation } from "../src/database-service/invitations";
 
 const INITIAL_GROUPS = ["Product", "Development"];
 
@@ -32,22 +31,25 @@ async function main() {
     });
   }
 
-  // 2. Initial admins (idempotent via unique email)
+  // 2. Initial admins — idempotent via a pre-check, not upsert: an upsert can't tell us whether
+  // the row was freshly created, and we must only invite/email brand-new admins.
   const adminEmails = parseAdminEmails();
   if (adminEmails.length === 0) {
     console.warn("[seed] INITIAL_ADMIN_EMAILS is empty — no admins seeded.");
   }
+
+  let created = 0;
   for (const email of adminEmails) {
-    await prisma.user.upsert({
-      where: { email },
-      update: {}, // do not clobber an existing user's role/status
-      create: { email, role: "admin", status: "invited" },
-    });
-    // TODO: enqueue OutboxEvent { type: "invitation.send", idempotencyKey: `seed-admin:${email}` }
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) continue; // already seeded (or otherwise provisioned) — never re-invite
+
+    const user = await prisma.user.create({ data: { email, role: "admin", status: "invited" } });
+    await createInvitation({ email, role: "admin", groupIds: [], invitedById: user.id });
+    created++;
   }
 
   console.log(
-    `[seed] groups=${INITIAL_GROUPS.length} admins=${adminEmails.length}`,
+    `[seed] groups=${INITIAL_GROUPS.length} admins=${adminEmails.length} newly-invited=${created}`,
   );
 }
 

@@ -16,6 +16,9 @@ describe("POST /mcp (HTTP black-box)", () => {
   let app: Express;
   let mintTestToken: typeof import("../../auth/testTokens").mintTestToken;
   let getEnv: typeof import("../../env").getEnv;
+  // tokenValidation.ts transitively imports db.ts (eager PrismaClient) — must stay a dynamic
+  // import loaded only after startTestDatabase() sets DATABASE_URL, same reason as createApp below.
+  let getMcpProtectedResourceMetadataUrl: typeof import("../../auth/tokenValidation").getMcpProtectedResourceMetadataUrl;
 
   const MCP_AUDIENCE = "https://mcp.artifact-hub.test";
   const API_AUDIENCE = "https://api.artifact-hub.test";
@@ -26,6 +29,7 @@ describe("POST /mcp (HTTP black-box)", () => {
 
     ({ getEnv } = await import("../../env"));
     ({ mintTestToken } = await import("../../auth/testTokens"));
+    ({ getMcpProtectedResourceMetadataUrl } = await import("../../auth/tokenValidation"));
     const { createApp } = await import("../../app");
     app = createApp();
   }, 60_000);
@@ -58,13 +62,39 @@ describe("POST /mcp (HTTP black-box)", () => {
     return JSON.parse(dataLine!.slice("data: ".length));
   }
 
-  it("401s with no bearer token", async () => {
-    await request(app)
+  it("401s with no bearer token, carrying WWW-Authenticate pointing at our Protected Resource Metadata", async () => {
+    const res = await request(app)
       .post("/mcp")
       .set("Accept", "application/json, text/event-stream")
       .set("Content-Type", "application/json")
       .send({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
       .expect(401);
+
+    const expectedUrl = getMcpProtectedResourceMetadataUrl(getEnv());
+    expect(res.headers["www-authenticate"]).toContain(`resource_metadata="${expectedUrl}"`);
+  });
+
+  it("does not set WWW-Authenticate on /api/* denials — PRM discovery is MCP-only", async () => {
+    const res = await request(app).get("/api/artifacts").expect(401);
+    expect(res.headers["www-authenticate"]).toBeUndefined();
+  });
+
+  describe("GET /.well-known/oauth-protected-resource (RFC 9728)", () => {
+    it("serves Protected Resource Metadata describing /mcp and Auth0 as the authorization server", async () => {
+      const env = getEnv();
+      const url = new URL(getMcpProtectedResourceMetadataUrl(env));
+
+      const res = await request(app).get(url.pathname).expect(200);
+
+      expect(res.body).toMatchObject({
+        resource: env.AUTH0_MCP_AUDIENCE,
+        authorization_servers: [`https://${env.AUTH0_DOMAIN}/`],
+      });
+    });
+
+    it("is also reachable at the bare well-known path as a defensive alias", async () => {
+      await request(app).get("/.well-known/oauth-protected-resource").expect(200);
+    });
   });
 
   it("403s a valid token minted for the wrong audience (API instead of MCP)", async () => {

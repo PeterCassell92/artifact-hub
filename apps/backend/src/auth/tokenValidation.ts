@@ -1,7 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { JwtPayload } from "jsonwebtoken";
 import jwt from "jsonwebtoken";
-import type { Role } from "contracts";
+import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import type { ApiErrorCode, Role } from "contracts";
 import { prisma } from "../db";
 import { getEnv, type Env } from "../env";
 import type { Viewer } from "../core/authz";
@@ -26,6 +27,16 @@ export type Audience = "api" | "mcp";
 
 function audienceFor(audience: Audience, env: Env): string {
   return audience === "api" ? env.AUTH0_API_AUDIENCE : env.AUTH0_MCP_AUDIENCE;
+}
+
+/**
+ * The RFC 9728 Protected Resource Metadata URL for `/mcp` (docs/architecture/02 §1.1 step 2) —
+ * shared by the discovery endpoint itself (adapters/mcp/discovery.ts) and the `WWW-Authenticate`
+ * header below, so the two can't drift apart. Path convention (`.well-known/oauth-protected-resource`
+ * + the resource's own path, since `/mcp` isn't root) reuses the MCP SDK's own RFC 9728 helper.
+ */
+export function getMcpProtectedResourceMetadataUrl(env: Env): string {
+  return getOAuthProtectedResourceMetadataUrl(new URL(env.AUTH0_MCP_AUDIENCE));
 }
 
 /**
@@ -55,14 +66,26 @@ async function verifyToken(token: string, audience: Audience, env: Env): Promise
  */
 export function requireAuth(audience: Audience): RequestHandler {
   return async (req: Request, res: Response, next: NextFunction) => {
+    const env = getEnv();
+
+    // Every denial on the MCP audience carries WWW-Authenticate pointing at our Protected
+    // Resource Metadata (docs/architecture/02 §1.1 step 2 — RFC 9728 discovery), so a client that
+    // shows up with no (valid) token can find its way to the real Auth0 flow. `/api/*` has no such
+    // discovery step — MCP-only.
+    const deny = (status: number, code: ApiErrorCode, message: string, details?: Record<string, unknown>) => {
+      if (audience === "mcp") {
+        res.set("WWW-Authenticate", `Bearer resource_metadata="${getMcpProtectedResourceMetadataUrl(env)}"`);
+      }
+      sendError(res, status, code, message, details);
+    };
+
     const header = req.header("authorization");
     const token = header?.startsWith("Bearer ") ? header.slice(7).trim() : undefined;
     if (!token) {
-      sendError(res, 401, "unauthorized", "Missing bearer token");
+      deny(401, "unauthorized", "Missing bearer token");
       return;
     }
 
-    const env = getEnv();
     let payload: JwtPayload;
     try {
       payload = await verifyToken(token, audience, env);
@@ -72,16 +95,16 @@ export function requireAuth(audience: Audience): RequestHandler {
       // Phase 1 ("401 unauthenticated, 403 denied"). jsonwebtoken's audience-mismatch message is
       // stable across versions; see node_modules/jsonwebtoken/verify.js.
       if (err instanceof jwt.JsonWebTokenError && err.message.startsWith("jwt audience invalid")) {
-        sendError(res, 403, "forbidden", "Token not valid for this resource");
+        deny(403, "forbidden", "Token not valid for this resource");
       } else {
-        sendError(res, 401, "unauthorized", "Invalid or expired token");
+        deny(401, "unauthorized", "Invalid or expired token");
       }
       return;
     }
 
     const sub = payload.sub;
     if (!sub) {
-      sendError(res, 401, "unauthorized", "Token missing subject");
+      deny(401, "unauthorized", "Token missing subject");
       return;
     }
 
@@ -91,7 +114,7 @@ export function requireAuth(audience: Audience): RequestHandler {
     });
 
     if (!user || user.status !== "active") {
-      sendError(res, 403, "forbidden", "No active account for this identity");
+      deny(403, "forbidden", "No active account for this identity");
       return;
     }
 
