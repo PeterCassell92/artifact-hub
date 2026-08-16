@@ -9,7 +9,7 @@
   publish = "apps/frontend/dist"
 
 [build.environment]
-  NODE_VERSION = "20.18.0"   # matches the Volta pin in the root package.json
+  NODE_VERSION = "24.19.0"   # matches the Volta pin in the root package.json
 
 # SPA fallback: serve index.html for client-side routes so deep-link refreshes work.
 [[redirects]]

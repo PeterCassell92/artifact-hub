@@ -1,4 +1,4 @@
-import { canManagePolicy, canView, type ArtifactPolicy, type Viewer } from "./authz.js";
+import { canManagePolicy, canView, type ArtifactPolicy, type Viewer } from "./authz";
 
 const now = new Date("2026-01-10T00:00:00Z");
 const future = new Date("2026-02-01T00:00:00Z");

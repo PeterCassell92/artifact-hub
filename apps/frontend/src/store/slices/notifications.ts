@@ -12,7 +12,7 @@ export interface AppNotification {
   text: string;
 }
 
-interface NotificationsState {
+export interface NotificationsState {
   items: AppNotification[];
 }
 

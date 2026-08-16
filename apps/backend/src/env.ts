@@ -37,13 +37,33 @@ const EnvSchema = z.object({
   BUCKET_NAME: z.string().min(1),
   AWS_ENDPOINT_URL_S3: z.string().url(),
   AWS_REGION: z.string().min(1),
+
+  // Dev/test-only auth shortcut (docs/development/bruno-mcp-token.md, 09 §3-4). Never used in
+  // production — the RS validator only trusts real Auth0 JWKS there. Required outside production
+  // (see superRefine below) so the shared test-token helper and POST /dev/mcp-token always have a
+  // signing key + guard secret to use.
+  DEV_JWT_SIGNING_SECRET: z.string().optional(),
+  DEV_MINT_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
 
+const RequiredOutsideProd = EnvSchema.superRefine((env, ctx) => {
+  if (env.NODE_ENV === "production") return;
+  for (const key of ["DEV_JWT_SIGNING_SECRET", "DEV_MINT_SECRET"] as const) {
+    if (!env[key]) {
+      ctx.addIssue({
+        code: "custom",
+        path: [key],
+        message: `${key} is required outside production (dev/test token signing)`,
+      });
+    }
+  }
+});
+
 let cached: Env | undefined;
 
 export function getEnv(): Env {
-  if (!cached) cached = EnvSchema.parse(process.env);
+  if (!cached) cached = RequiredOutsideProd.parse(process.env);
   return cached;
 }

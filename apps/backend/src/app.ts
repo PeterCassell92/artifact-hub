@@ -1,7 +1,9 @@
 import express, { type Express } from "express";
-import { prisma } from "./db.js";
-import { createApiRouter } from "./adapters/http/router.js";
-import { mountMcp } from "./adapters/mcp/server.js";
+import { prisma } from "./db";
+import { getEnv } from "./env";
+import { createApiRouter } from "./adapters/http/router";
+import { mountMcp } from "./adapters/mcp/server";
+import { createDevMcpTokenRouter } from "./adapters/http/routes/devMcpToken";
 
 /** Builds the Express app (API + MCP) — exported so integration tests can drive it. */
 export function createApp(): Express {
@@ -23,6 +25,11 @@ export function createApp(): Express {
 
   app.use("/api", createApiRouter());
   mountMcp(app);
+
+  // Dev-only token mint (docs/development/bruno-mcp-token.md) — never mounted in production.
+  if (getEnv().NODE_ENV !== "production") {
+    app.use("/dev", createDevMcpTokenRouter());
+  }
 
   return app;
 }

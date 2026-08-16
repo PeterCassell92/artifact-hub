@@ -1,13 +1,11 @@
-import { configureStore, type PreloadedStateShapeFromReducersMapObject } from "@reduxjs/toolkit";
+import { combineReducers, configureStore } from "@reduxjs/toolkit";
 import notifications from "./slices/notifications";
 
-const reducer = { notifications };
+const rootReducer = combineReducers({ notifications });
 
 /** Factory so tests can build an isolated store (see frontend-component-testing skill). */
-export function makeStore(
-  preloadedState?: PreloadedStateShapeFromReducersMapObject<typeof reducer>,
-) {
-  return configureStore({ reducer, preloadedState });
+export function makeStore(preloadedState?: Partial<ReturnType<typeof rootReducer>>) {
+  return configureStore({ reducer: rootReducer, preloadedState });
 }
 
 export const store = makeStore();

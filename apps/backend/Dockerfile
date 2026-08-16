@@ -4,7 +4,7 @@
 # contracts is compiled into the backend output at build time — no separate runtime artifact
 # (answers the "does the shared package complicate deployment?" question: it does not).
 
-FROM node:20-slim AS build
+FROM node:24-slim AS build
 WORKDIR /repo
 RUN corepack enable
 
