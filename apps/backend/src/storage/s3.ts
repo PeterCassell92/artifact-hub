@@ -1,4 +1,4 @@
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getEnv } from "../env";
 
@@ -44,4 +44,56 @@ export function getPresignedDownloadUrl(
     ResponseContentDisposition: `inline; filename="${sanitizeFileName(fileName)}"`,
   });
   return getSignedUrl(getClient(), command, { expiresIn: ttlSeconds });
+}
+
+export interface PresignedUploadOptions {
+  contentType: string;
+  ttlSeconds?: number;
+}
+
+/**
+ * The MCP `publish_artifact` upload path (docs/architecture/01 decision #44): bytes go straight
+ * from the agent's host to Tigris/MinIO via this presigned PUT, never through a tool call.
+ */
+export function getPresignedUploadUrl(
+  storageKey: string,
+  { contentType, ttlSeconds = 300 }: PresignedUploadOptions,
+): Promise<string> {
+  const env = getEnv();
+  const command = new PutObjectCommand({
+    Bucket: env.BUCKET_NAME,
+    Key: storageKey,
+    ContentType: contentType,
+  });
+  return getSignedUrl(getClient(), command, { expiresIn: ttlSeconds });
+}
+
+/** Confirms an upload landed (publish_artifact finalize step) — null if the object isn't there yet. */
+export async function headObject(storageKey: string): Promise<{ sizeBytes: number } | null> {
+  const env = getEnv();
+  try {
+    const result = await getClient().send(
+      new HeadObjectCommand({ Bucket: env.BUCKET_NAME, Key: storageKey }),
+    );
+    return { sizeBytes: result.ContentLength ?? 0 };
+  } catch (err) {
+    if (err instanceof NotFound) return null;
+    throw err;
+  }
+}
+
+export interface ObjectBytes {
+  buffer: Buffer;
+  contentType?: string;
+}
+
+/** Server-side GetObject for the `artifact://<id>` MCP Resource (docs/architecture/05 §5) — the
+ * only place raw bytes are read by the backend; never presigned, never left to the agent. */
+export async function getObjectBuffer(storageKey: string): Promise<ObjectBytes> {
+  const env = getEnv();
+  const result = await getClient().send(
+    new GetObjectCommand({ Bucket: env.BUCKET_NAME, Key: storageKey }),
+  );
+  const bytes = await result.Body!.transformToByteArray();
+  return { buffer: Buffer.from(bytes), contentType: result.ContentType };
 }

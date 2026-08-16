@@ -176,6 +176,6 @@ Phase 3 for poking raw JSON-RPC without a chat client.
       guard, active-user check, reuses the helper; unit + integration tests incl. a test asserting
       it is **absent in prod**.
 - [x] Backend: RS validator trusts the test signing key **only** in dev/test.
-- [ ] `tools/bruno/artifact-hub-mcp/` collection + `local`/`deployed` environments as above.
+- [x] `tools/bruno/artifact-hub-mcp/` collection + `local`/`deployed` environments as above.
 - [x] `.env.example`: add `TEST_MINT_SECRET`.
 - [ ] Cross-link this doc from the deploy runbook's "not for prod" list.

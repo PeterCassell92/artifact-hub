@@ -1,0 +1,25 @@
+meta {
+  name: 03 List Shared With Me
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{mcpToken}}
+  Accept: application/json, text/event-stream
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": { "name": "list_shared_with_me", "arguments": { "sinceHours": 24 } }
+  }
+}

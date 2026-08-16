@@ -12,19 +12,18 @@ import {
 import { canManagePolicy, canView } from "../../../core/authz";
 import { computeExpiresAt } from "../../../core/policy";
 import {
+  checkViewAndAudit,
   findArtifactForDetail,
   listOwnedArtifacts,
+  resolveAudienceInput,
   toDetail,
   toPolicy,
   toSummary,
   updateArtifactPolicy,
 } from "../../../database-service/artifacts";
 import { createComment, listComments } from "../../../database-service/comments";
-import { recordAccessEvent } from "../../../database-service/accessEvents";
 import { recordAdminAuditLog } from "../../../database-service/adminAuditLog";
 import { createShareLink } from "../../../database-service/shareLinks";
-import { findGroupsByNames } from "../../../database-service/groups";
-import { findUsersByEmails } from "../../../database-service/adminUsers";
 import { getPresignedDownloadUrl } from "../../../storage/s3";
 import { getEnv } from "../../../env";
 import { sendError } from "../errors";
@@ -73,16 +72,7 @@ export function createArtifactsRouter(): Router {
 
     const viewer = req.viewer!;
     const now = new Date();
-    const decision = canView(viewer, toPolicy(artifact), now);
-
-    await recordAccessEvent({
-      artifactId: artifact.id,
-      userId: viewer.id,
-      route: "ui",
-      action: "view",
-      decision: decision.allowed ? "allowed" : "denied",
-      denyReason: decision.reason,
-    });
+    const decision = await checkViewAndAudit(viewer, artifact, "ui", "view");
 
     if (!decision.allowed) {
       sendError(res, 403, "forbidden", "You do not have access to this artifact", {
@@ -183,40 +173,20 @@ export function createArtifactsRouter(): Router {
       return;
     }
 
-    let allowedUserIds: string[] = [];
-    if (body.data.audienceType === "specific_users") {
-      const emails = body.data.userEmails ?? [];
-      const users = await findUsersByEmails(emails);
-      const foundEmails = new Set(users.map((u) => u.email));
-      const unknown = emails.filter((e) => !foundEmails.has(e));
-      if (unknown.length > 0) {
-        sendError(res, 400, "bad_request", "Unknown user email(s)", { unknownEmails: unknown });
-        return;
-      }
-      allowedUserIds = users.map((u) => u.id);
-    }
-
-    let allowedGroupIds: string[] = [];
-    if (body.data.audienceType === "user_groups") {
-      const names = body.data.groupNames ?? [];
-      const groups = await findGroupsByNames(names);
-      const foundNames = new Set(groups.map((g) => g.name));
-      const unknown = names.filter((n) => !foundNames.has(n));
-      if (unknown.length > 0) {
-        sendError(res, 400, "bad_request", "Unknown group name(s)", { unknownGroups: unknown });
-        return;
-      }
-      allowedGroupIds = groups.map((g) => g.id);
+    const resolved = await resolveAudienceInput(body.data);
+    if (!resolved.ok) {
+      sendError(res, 400, "bad_request", resolved.error, resolved.details);
+      return;
     }
 
     const now = new Date();
     const expiresAt = computeExpiresAt(body.data.expiry, now);
 
     await updateArtifactPolicy(artifact.id, {
-      audienceType: body.data.audienceType,
+      audienceType: resolved.audienceType,
       expiresAt,
-      allowedUserIds,
-      allowedGroupIds,
+      allowedUserIds: resolved.allowedUserIds,
+      allowedGroupIds: resolved.allowedGroupIds,
       updatedById: viewer.id,
     });
 
@@ -225,7 +195,15 @@ export function createArtifactsRouter(): Router {
       action: "policy.update",
       targetType: "artifact",
       targetId: artifact.id,
-      metadata: { before, after: { audienceType: body.data.audienceType, expiresAt, allowedUserIds, allowedGroupIds } },
+      metadata: {
+        before,
+        after: {
+          audienceType: resolved.audienceType,
+          expiresAt,
+          allowedUserIds: resolved.allowedUserIds,
+          allowedGroupIds: resolved.allowedGroupIds,
+        },
+      },
     });
 
     const updated = await findArtifactForDetail(artifact.id);
@@ -284,16 +262,7 @@ export function createArtifactsRouter(): Router {
     }
 
     const viewer = req.viewer!;
-    const decision = canView(viewer, toPolicy(artifact), new Date());
-
-    await recordAccessEvent({
-      artifactId: artifact.id,
-      userId: viewer.id,
-      route: "ui",
-      action: "download",
-      decision: decision.allowed ? "allowed" : "denied",
-      denyReason: decision.reason,
-    });
+    const decision = await checkViewAndAudit(viewer, artifact, "ui", "download");
 
     if (!decision.allowed) {
       sendError(res, 403, "forbidden", "You do not have access to this artifact", {

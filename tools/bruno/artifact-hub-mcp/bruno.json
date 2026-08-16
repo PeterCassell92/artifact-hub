@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "name": "artifact-hub-mcp",
+  "type": "collection",
+  "ignore": ["node_modules", ".git"]
+}

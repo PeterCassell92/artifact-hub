@@ -42,6 +42,9 @@ export const ArtifactSummary = z.object({
   fileName: z.string(),
   contentType: z.string(),
   kind: ArtifactKind,
+  /** Format detail, e.g. "mermaid"/"markdown"/"png" (docs/models/artifact.md §2) — falls back to
+   * `kind` for display when unset (e.g. MCP list tables, docs/architecture/05 §4). */
+  format: z.string().nullable(),
   sizeBytes: z.number().int().nonnegative(),
   publisherName: z.string().nullable(),
   publishedAt: z.string().datetime(),

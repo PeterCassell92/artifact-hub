@@ -1,0 +1,25 @@
+meta {
+  name: 04 Read Artifact Resource
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{mcpToken}}
+  Accept: application/json, text/event-stream
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "resources/read",
+    "params": { "uri": "artifact://REPLACE-WITH-ARTIFACT-ID" }
+  }
+}

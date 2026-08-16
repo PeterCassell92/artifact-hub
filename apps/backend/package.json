@@ -24,6 +24,10 @@
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
+  "imports": {
+    "#env": "./src/env.ts",
+    "#mcp-server": "./src/adapters/mcp/server.ts"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",
     "@aws-sdk/s3-request-presigner": "^3.1111.0",

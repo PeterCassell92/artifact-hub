@@ -1,0 +1,29 @@
+meta {
+  name: 01 Initialize
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{mcpToken}}
+  Accept: application/json, text/event-stream
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2026-07-28",
+      "capabilities": {},
+      "clientInfo": { "name": "bruno", "version": "1.0.0" }
+    }
+  }
+}
