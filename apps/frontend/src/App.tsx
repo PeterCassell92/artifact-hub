@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { ShareLinkRedemptionPage } from "./pages/ShareLinkRedemptionPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { GetStartedPage } from "./pages/GetStartedPage";
 import { MyArtifactsPage } from "./pages/MyArtifactsPage";
 import { SharedWithMePage } from "./pages/SharedWithMePage";
 import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
@@ -24,6 +25,7 @@ export default function App() {
 
         <Route element={<AppLayout />}>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/get-started" element={<GetStartedPage />} />
           <Route path="/artifacts" element={<MyArtifactsPage />} />
           <Route path="/shared" element={<SharedWithMePage />} />
           <Route path="/artifacts/:id" element={<ArtifactDetailPage />} />

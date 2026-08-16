@@ -24,6 +24,7 @@ magic-link sign-in and then redirected straight to that artifact's detail view.
 |-------|------|-----|
 | `/login` | Email → magic-link prompt | anyone (unauthenticated) |
 | `/` (Dashboard) | Overview: recent My Artifacts + recent Shared With Me + quick filters/search | member+ |
+| `/get-started` | Connect Claude Code / Claude Desktop to the MCP server (`/mcp` URL, CLI command, config snippet) — this, not the SPA, is how artifacts get published | member+ |
 | `/artifacts` | **My Artifacts** — everything I own | member+ |
 | `/shared` | **Shared With Me** — artifacts others shared to me/my groups | member+ |
 | `/artifacts/:id` | **Artifact detail** — view/download, comments, share, policy | member+ (per `canView`) |

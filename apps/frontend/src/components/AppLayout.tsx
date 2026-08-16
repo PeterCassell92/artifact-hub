@@ -21,6 +21,9 @@ export function AppLayout() {
             <NavLink to="/" end className={navLinkClass}>
               Artifact Hub
             </NavLink>
+            <NavLink to="/get-started" className={navLinkClass}>
+              Get Started
+            </NavLink>
             <NavLink to="/artifacts" className={navLinkClass}>
               My Artifacts
             </NavLink>

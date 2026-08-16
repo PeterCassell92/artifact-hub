@@ -1,15 +1,30 @@
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useGetMeQuery, useGetMyArtifactsQuery, useGetSharedWithMeQuery } from "../store/api";
 import { ArtifactListItem } from "../components/ArtifactListItem";
 import { audienceLabel } from "../lib/formatters";
+import { hasVisitedGetStarted, markVisitedGetStarted } from "../lib/getStartedCookie";
 
 const RECENT_LIMIT = 5;
 
-/** Landing page after sign-in — recent My Artifacts + Shared With Me (docs/frontend/01 §3). */
+/** Landing page after sign-in — recent My Artifacts + Shared With Me (docs/frontend/01 §3).
+ * First-ever visit (no `artifact-hub-visited-get-started` cookie) redirects to /get-started once,
+ * so new members see the MCP connection instructions before the (likely empty) dashboard. Done in
+ * a useEffect, not during render — React.StrictMode double-invokes render bodies in dev, and
+ * setting the cookie there would make the second invocation see it as already-visited and skip
+ * the redirect. Effects are the correct place for this kind of one-time, idempotent side effect. */
 export function DashboardPage() {
+  const navigate = useNavigate();
   const { data: me } = useGetMeQuery();
   const mine = useGetMyArtifactsQuery({ limit: RECENT_LIMIT });
   const shared = useGetSharedWithMeQuery({ limit: RECENT_LIMIT });
+
+  useEffect(() => {
+    if (!hasVisitedGetStarted()) {
+      markVisitedGetStarted();
+      navigate("/get-started", { replace: true });
+    }
+  }, [navigate]);
 
   const isEmpty = mine.data?.items.length === 0 && shared.data?.items.length === 0;
 
@@ -22,7 +37,10 @@ export function DashboardPage() {
       {isEmpty && (
         <div className="mt-6 rounded-md border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
           Nothing here yet. Artifacts are published via your agent (e.g. Claude Desktop) using Artifact
-          Hub&apos;s MCP tools — this page is for viewing and managing what&apos;s shared.
+          Hub&apos;s MCP tools — this page is for viewing and managing what&apos;s shared.{" "}
+          <Link to="/get-started" className="text-neutral-700 underline hover:text-neutral-900">
+            Get started
+          </Link>
         </div>
       )}
 
