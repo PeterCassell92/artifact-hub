@@ -59,3 +59,14 @@ export function ownedArtifactsTable(items: OwnedRow[]): string {
   );
   return ["| id | title | filetype | createdAt | policy |", "|---|---|---|---|---|", ...rows].join("\n");
 }
+
+interface GroupRow {
+  name: string;
+  description: string | null;
+}
+
+/** `list_groups` table — every group in the org, for referencing in audience.groupNames. */
+export function groupsTable(items: GroupRow[]): string {
+  const rows = items.map((g) => `| ${g.name} | ${g.description ?? ""} |`);
+  return ["| name | description |", "|---|---|", ...rows].join("\n");
+}

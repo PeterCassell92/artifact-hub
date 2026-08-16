@@ -78,8 +78,18 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 | `comment_on_artifact` | Add an attributable comment | `{ id, body }` | `{ commentId, createdAt }` |
 | `create_share_link` | Mint a locator link for an artifact you own | `{ id }` | `{ url }` |
 | `set_access_policy` | Change an owned artifact's audience/expiry (revoke) | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
+| `get_user_details` | Caller's own identity — email, name, role, group names | `{}` | `{ email, name, role, groupNames }` |
+| `list_groups` | Every group in the org, regardless of the caller's membership | `{}` | `{ groups: [{ name, description }] }` + markdown table |
 
 Notes:
+- **`get_user_details` and `list_groups` exist so `audience.groupNames` isn't a guessing game.**
+  `publish_artifact` and `set_access_policy` need an *exact* group name string, and there's no other
+  MCP-reachable way to discover one — `GET /api/me` and `GET /api/admin/groups` are API-audience-only
+  and unreachable from an MCP token (R2). Both tool descriptions point agents at `get_user_details`
+  (the caller's own groups) or `list_groups` (every group — **publishing/sharing to a group the
+  caller doesn't belong to is a supported journey**, not an error) rather than guessing. Neither
+  tool exposes group *membership rosters* or any create/rename/membership-change capability —
+  read-only names/descriptions only, staying clear of the "no group management over MCP" rule below.
 - **Publishing is exclusive to this path** — there is no publish/upload screen in the SPA (see
   `06` and `../frontend/`). Artifacts are created only via `publish_artifact`.
 - **Capture rich metadata at publish.** `publish_artifact` should collect the classification

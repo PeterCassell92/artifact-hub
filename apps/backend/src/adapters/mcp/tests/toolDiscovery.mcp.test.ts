@@ -13,7 +13,7 @@ describe("Agents can discover the v1 tool surface, and only that surface", () =>
     await teardownMcpTestContext(ctx);
   });
 
-  it("lists exactly the 7 v1 tools — no admin tools are ever registered (R3)", async () => {
+  it("lists exactly the 9 v1 tools — no admin tools are ever registered (R3)", async () => {
     const { client } = await ctx.connectAsUser(`user-${randomUUID()}@test.local`);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
@@ -21,7 +21,9 @@ describe("Agents can discover the v1 tool surface, and only that surface", () =>
         "comment_on_artifact",
         "create_share_link",
         "get_artifact",
+        "get_user_details",
         "list_artifacts",
+        "list_groups",
         "list_shared_with_me",
         "publish_artifact",
         "set_access_policy",

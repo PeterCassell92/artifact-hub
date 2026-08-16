@@ -1,48 +1,19 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AuthenticatedViewer } from "../../auth/tokenValidation";
-import { canView } from "../../core/authz";
-import { findArtifactForDetail, toPolicy } from "../../database-service/artifacts";
-import { listComments } from "../../database-service/comments";
-import { SummariseArtifactReviewsArgs } from "./schemas";
+import * as summariseArtifactReviews from "./prompts/summarise-artifact-reviews";
 
-const PROMPT_DESCRIPTION =
-  "Summarise the reviews (comments) left on an artifact. The user invokes this themselves " +
-  "(e.g. as a slash command in the client) — it is not called autonomously by the model. This " +
-  "server performs no LLM call itself: it injects the artifact's comments as prompt content and " +
-  "asks the CLIENT's own model to produce the summary.";
-
-/** `summarise_artifact_reviews` (docs/architecture/05 §6) — LLM-free on the backend by design. */
-export function registerReviewPrompt(server: McpServer, viewer: AuthenticatedViewer): void {
+/**
+ * Registers the v1 prompt surface (docs/architecture/05 §6). This file only imports and
+ * registers prompts — each prompt's own text/logic lives in its own file under prompts/.
+ */
+export function registerPrompts(server: McpServer, viewer: AuthenticatedViewer): void {
   server.registerPrompt(
-    "summarise_artifact_reviews",
+    summariseArtifactReviews.NAME,
     {
-      title: "Summarise artifact reviews",
-      description: PROMPT_DESCRIPTION,
-      argsSchema: SummariseArtifactReviewsArgs.shape,
+      title: summariseArtifactReviews.TITLE,
+      description: summariseArtifactReviews.DESCRIPTION,
+      argsSchema: summariseArtifactReviews.ARGS_SCHEMA,
     },
-    async (args) => {
-      const artifact = await findArtifactForDetail(args.artifactId);
-      if (!artifact) throw new Error("Artifact not found.");
-
-      const decision = canView(viewer, toPolicy(artifact), new Date());
-      if (!decision.allowed) throw new Error(`Access denied (${decision.reason}).`);
-
-      const comments = await listComments(artifact.id);
-      const commentsText = comments.length
-        ? comments.map((c) => `- ${c.authorName} (${c.createdAt}): ${c.body}`).join("\n")
-        : "(No comments yet.)";
-
-      return {
-        messages: [
-          {
-            role: "user",
-            content: {
-              type: "text",
-              text: `Summarise the key themes, sentiment, and action items from these reviews of "${artifact.title}":\n\n${commentsText}`,
-            },
-          },
-        ],
-      };
-    },
+    (args) => summariseArtifactReviews.handle(viewer, args),
   );
 }

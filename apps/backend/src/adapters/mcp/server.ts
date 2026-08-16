@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { requireAuth, type AuthenticatedViewer } from "../../auth/tokenValidation";
 import { registerArtifactTools } from "./tools";
 import { registerArtifactResource } from "./resource";
-import { registerReviewPrompt } from "./prompts";
+import { registerPrompts } from "./prompts";
 
 /**
  * Builds a fresh, fully-registered server for one HTTP request (docs/architecture/05 §1:
@@ -18,7 +18,7 @@ export function createMcpServer(viewer: AuthenticatedViewer): McpServer {
 
   registerArtifactTools(server, viewer);
   registerArtifactResource(server, viewer);
-  registerReviewPrompt(server, viewer);
+  registerPrompts(server, viewer);
 
   return server;
 }

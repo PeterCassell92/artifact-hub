@@ -16,7 +16,7 @@ import { startTestDatabase, type TestDatabase } from "../../../test-support/test
 export interface McpTestContext {
   db: TestDatabase;
   prisma: PrismaClient;
-  connectAsUser: (email: string) => Promise<{ client: Client; user: User }>;
+  connectAsUser: (email: string, groupIds?: string[]) => Promise<{ client: Client; user: User }>;
   makeActiveUser: (email: string) => Promise<User>;
   makeArtifact: (over: MakeArtifactInput) => Promise<Artifact>;
 }
@@ -40,8 +40,15 @@ export async function setupMcpTestContext(): Promise<McpTestContext> {
     return prisma.user.create({ data: { email, idpSub: `idp|${email}`, status: "active" } });
   }
 
-  async function connectAsUser(email: string) {
+  // `groupIds` are assigned BEFORE the viewer snapshot is built (below) — unlike production, where
+  // mountMcp resolves a fresh viewer (incl. group membership) on every single HTTP request, this
+  // in-memory test connection stays open and reuses one snapshotted viewer for its whole lifetime,
+  // so membership changes made after connecting would never be reflected on that same client.
+  async function connectAsUser(email: string, groupIds: string[] = []) {
     const user = await makeActiveUser(email);
+    for (const groupId of groupIds) {
+      await prisma.groupMembership.create({ data: { userId: user.id, groupId } });
+    }
     const memberships = await prisma.groupMembership.findMany({ where: { userId: user.id } });
     const viewer = { id: user.id, status: user.status, role: user.role, groupIds: memberships.map((m) => m.groupId) };
     const server = createMcpServer(viewer);

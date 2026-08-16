@@ -141,4 +141,39 @@ describe("Agents can publish a new artifact without ever sending its bytes throu
     expect(stored!.ownerId).toBe(user.id);
     expect(Number(stored!.sizeBytes)).toBe(Buffer.byteLength("the actual bytes"));
   });
+
+  it("can publish to a group the publisher does NOT belong to — group membership isn't required to target a group", async () => {
+    const groupName = `design-team-${randomUUID()}`;
+    const group = await ctx.prisma.group.create({ data: { name: groupName } });
+
+    const { client: publisherClient } = await ctx.connectAsUser(`publisher-${randomUUID()}@test.local`);
+    const { client: memberClient } = await ctx.connectAsUser(`member-${randomUUID()}@test.local`, [group.id]);
+    const { client: outsiderClient } = await ctx.connectAsUser(`outsider-${randomUUID()}@test.local`);
+
+    const start = await publisherClient.callTool({
+      name: "publish_artifact",
+      arguments: {
+        title: "For the design team",
+        fileName: "spec.txt",
+        contentType: "text/plain",
+        audience: { type: "user_groups", groupNames: [groupName] },
+        expiry: "never",
+      },
+    });
+    expect(start.isError).toBeFalsy();
+    const { artifactId, uploadUrl } = textPayload(start) as { artifactId: string; uploadUrl: string };
+
+    await fetch(uploadUrl, { method: "PUT", body: "spec text", headers: { "Content-Type": "text/plain" } });
+    const finish = await publisherClient.callTool({ name: "publish_artifact", arguments: { bytesRef: artifactId } });
+    expect(finish.isError).toBeFalsy();
+
+    const stored = await ctx.prisma.artifact.findUnique({ where: { id: artifactId } });
+    expect(stored).toMatchObject({ audienceType: "user_groups" });
+
+    const memberRead = await memberClient.callTool({ name: "get_artifact", arguments: { id: artifactId } });
+    expect(memberRead.isError).toBeFalsy();
+
+    const outsiderRead = await outsiderClient.callTool({ name: "get_artifact", arguments: { id: artifactId } });
+    expect(outsiderRead.isError).toBe(true);
+  });
 });

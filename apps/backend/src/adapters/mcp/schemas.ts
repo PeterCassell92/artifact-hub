@@ -75,3 +75,7 @@ export const SetAccessPolicyInput = z.object({
 });
 
 export const SummariseArtifactReviewsArgs = z.object({ artifactId: z.string() });
+
+export const GetUserDetailsInput = z.object({});
+
+export const ListGroupsInput = z.object({});

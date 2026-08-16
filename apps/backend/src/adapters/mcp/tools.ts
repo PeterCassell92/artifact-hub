@@ -17,15 +17,19 @@ import {
 import { createComment } from "../../database-service/comments";
 import { recordAdminAuditLog } from "../../database-service/adminAuditLog";
 import { createShareLink } from "../../database-service/shareLinks";
+import { findUserWithGroupsById, toUserView } from "../../database-service/adminUsers";
+import { listGroups, toGroupView } from "../../database-service/groups";
 import { getObjectBuffer } from "../../storage/s3";
 import { getEnv } from "../../env";
-import { ownedArtifactsTable, sharedWithMeTable } from "./format";
+import { groupsTable, ownedArtifactsTable, sharedWithMeTable } from "./format";
 import {
   CommentOnArtifactInput,
   CreateShareLinkInput,
   GetArtifactInput,
+  GetUserDetailsInput,
   isValidPublishArtifactInput,
   ListArtifactsInput,
+  ListGroupsInput,
   ListSharedWithMeInput,
   PublishArtifactInput,
   SetAccessPolicyInput,
@@ -38,7 +42,7 @@ Do NOT use this to change an existing artifact's audience or expiry — use set_
 
 Two calls, one tool — file bytes never pass through this tool call. Call it WITHOUT bytesRef to start: supply title, fileName, contentType, audience, and expiry (plus optional description/kind/tags/sourceTool/format/language/metadata). The result includes uploadUrl, a short-lived presigned PUT URL. PUT the file's bytes to that URL yourself, outside MCP (e.g. curl -X PUT --data-binary @file "$uploadUrl"). Then call publish_artifact again with ONLY bytesRef (the value returned as bytesRef the first time) and, optionally, checksumSha256, to finish — this verifies the upload actually landed before the artifact is ready.
 
-audience.type is one of public_authenticated (any signed-in user) | specific_users (requires audience.userEmails) | user_groups (requires audience.groupNames). expiry is one of 24h | 7d | 30d | never.
+audience.type is one of public_authenticated (any signed-in user) | specific_users (requires audience.userEmails) | user_groups (requires audience.groupNames). expiry is one of 24h | 7d | 30d | never. groupNames must match a group's exact name — the caller does NOT need to belong to a group to publish to it. If you don't already have the exact name, call list_groups to see every group in the organization (or get_user_details for just the caller's own groups) rather than guessing.
 
 Result is metadata-only JSON, never file bytes: on the start call, { artifactId, resourceUri, uploadUrl, bytesRef }; on the finish call, { artifactId, resourceUri }. Once published, read the file back via the artifact://<id> resource, never from this tool.
 
@@ -98,11 +102,31 @@ const SET_ACCESS_POLICY_DESCRIPTION = `Changes who can access an artifact you ow
 
 Owner-only — refuses for artifacts the caller doesn't own. Do NOT use publish_artifact to edit an existing artifact's policy — this is the only tool that changes policy after publish.
 
-Arguments: id (artifact uuid), audience ({ type: public_authenticated | specific_users | user_groups, userEmails? (required for specific_users), groupNames? (required for user_groups) }), expiry (24h | 7d | 30d | never).
+Arguments: id (artifact uuid), audience ({ type: public_authenticated | specific_users | user_groups, userEmails? (required for specific_users), groupNames? (required for user_groups) }), expiry (24h | 7d | 30d | never). groupNames must match a group's exact name — the caller does NOT need to belong to a group to share with it. If you don't already have the exact name, call list_groups to see every group in the organization (or get_user_details for just the caller's own groups) rather than guessing.
 
 Result is metadata-only: { ok, effectiveFrom }.
 
 Example: set_access_policy({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", audience: { type: "specific_users", userEmails: ["reviewer@example.com"] }, expiry: "7d" }).`;
+
+const GET_USER_DETAILS_DESCRIPTION = `Returns the calling user's own identity — email, display name, role, and the exact names of the groups they belong to. Use before publish_artifact or set_access_policy specifically when the user says something like "share with my team" and means one of THEIR OWN groups but hasn't given you the exact name.
+
+Do NOT use this to look up any OTHER user's info — there is no such capability over MCP (no admin/user-management tools, R3); this only ever returns the calling user's own membership. Do NOT use this to find a group the caller ISN'T a member of — use list_groups for the full organization-wide list (you can publish/share to any group, not just your own).
+
+Arguments: none.
+
+Result is metadata-only: { email, name, role, groupNames }.
+
+Example: get_user_details({}).`;
+
+const LIST_GROUPS_DESCRIPTION = `Lists every group in the organization — name and description — regardless of whether the caller belongs to it. Use before publish_artifact or set_access_policy whenever the user wants to share with a group and you don't already have its exact name; audience.groupNames must match exactly, and guessing wastes a call. You can publish/share to any group, including ones the caller isn't a member of — that's expected, not an error.
+
+Do NOT use this to see group MEMBERSHIP (who's in a group) — it returns group names/descriptions only, never member lists. Do NOT use this for the caller's own groups specifically if that's all you need — get_user_details is a smaller, equally valid answer for that narrower case, but list_groups always works too. This is a read-only lookup, not group management — there is no create/rename/membership-change capability over MCP (R3); those are /api/admin/groups-only, human-UI.
+
+Arguments: none.
+
+Result is metadata-only: { groups: [{ name, description }] }, plus a markdown table.
+
+Example: list_groups({}).`;
 
 /** Registers the v1 tool surface (docs/architecture/05 §4) on a per-request server, closing over
  * the already-authenticated `viewer` so every handler authorizes as that caller — no admin tools
@@ -332,6 +356,27 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       });
 
       return toolJson({ ok: true, effectiveFrom: now.toISOString() });
+    },
+  );
+
+  server.registerTool(
+    "get_user_details",
+    { title: "Get user details", description: GET_USER_DETAILS_DESCRIPTION, inputSchema: GetUserDetailsInput },
+    async () => {
+      const user = await findUserWithGroupsById(viewer.id);
+      if (!user) return toolError("User not found.");
+
+      const { email, name, role, groupNames } = toUserView(user);
+      return toolJson({ email, name, role, groupNames });
+    },
+  );
+
+  server.registerTool(
+    "list_groups",
+    { title: "List groups", description: LIST_GROUPS_DESCRIPTION, inputSchema: ListGroupsInput },
+    async () => {
+      const groups = (await listGroups()).map(toGroupView).map(({ name, description }) => ({ name, description }));
+      return toolJson({ groups }, groupsTable(groups));
     },
   );
 }
