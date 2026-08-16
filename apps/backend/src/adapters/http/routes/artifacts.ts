@@ -4,9 +4,10 @@ import {
   AccessPolicyInput,
   ArtifactDetail,
   ArtifactListResponse,
+  ArtifactListSupportedQuery,
   CommentView,
   CreateCommentInput,
-  MyArtifactsQuery,
+  DownloadUrlResponse,
   ShareLinkView,
 } from "contracts";
 import { canManagePolicy, canView } from "../../../core/authz";
@@ -15,6 +16,7 @@ import {
   checkViewAndAudit,
   findArtifactForDetail,
   listOwnedArtifacts,
+  listSharedWithMe,
   resolveAudienceInput,
   toDetail,
   toPolicy,
@@ -33,24 +35,25 @@ const IdParams = z.object({ id: z.string().uuid() });
 export function createArtifactsRouter(): Router {
   const router = Router();
 
-  // GET /api/artifacts — "My Artifacts" (owner's own); see implementation-plan.md Phase 2 and
-  // MyArtifactsQuery's own doc comment for why scope/facets beyond `mine` aren't supported yet.
+  // GET /api/artifacts — "My Artifacts" (owner's own) + "Shared With Me"; see
+  // implementation-plan.md Phase 6 and ArtifactListSupportedQuery's own doc comment for why
+  // full search/facets/sort aren't supported yet (Phase 7).
   router.get("/", async (req, res) => {
-    const parsed = MyArtifactsQuery.safeParse(req.query);
+    const parsed = ArtifactListSupportedQuery.safeParse(req.query);
     if (!parsed.success) {
       sendError(res, 400, "bad_request", "Invalid query", parsed.error.flatten());
       return;
     }
-    if (parsed.data.scope !== "mine") {
-      sendError(res, 400, "bad_request", "Only scope=mine is supported currently");
-      return;
-    }
 
     const viewer = req.viewer!;
-    const { items, nextCursor } = await listOwnedArtifacts(viewer.id, {
-      limit: parsed.data.limit,
-      cursor: parsed.data.cursor,
-    });
+    const { items, nextCursor } =
+      parsed.data.scope === "mine"
+        ? await listOwnedArtifacts(viewer.id, { limit: parsed.data.limit, cursor: parsed.data.cursor })
+        : await listSharedWithMe(viewer, {
+            sinceHours: parsed.data.sinceHours,
+            limit: parsed.data.limit,
+            cursor: parsed.data.cursor,
+          });
 
     const now = new Date();
     res.json(ArtifactListResponse.parse({ items: items.map((a) => toSummary(a, now)), nextCursor }));
@@ -275,6 +278,16 @@ export function createArtifactsRouter(): Router {
       contentType: artifact.contentType,
       fileName: artifact.fileName,
     });
+
+    // The SPA asks for JSON (it uses the URL as a plain <iframe>/<img>/<a> target, not via
+    // fetch-follow-redirect — the redirect's final hop is Tigris, a third origin with no CORS
+    // configured). Direct/manual callers (curl, Bruno, an absent/`*/*` Accept header) keep the
+    // original 302 — "html" listed first so a wildcard Accept matches it, not "json".
+    if (req.accepts(["html", "json"]) === "json") {
+      res.json(DownloadUrlResponse.parse({ url }));
+      return;
+    }
+
     res.redirect(302, url);
   });
 

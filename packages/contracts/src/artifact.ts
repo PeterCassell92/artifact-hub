@@ -84,14 +84,19 @@ export const ArtifactListQuery = z.object({
 export type ArtifactListQuery = z.infer<typeof ArtifactListQuery>;
 
 /**
- * What GET /api/artifacts actually supports today (implementation-plan.md Phase 2: "My
- * Artifacts — owner's own" only). `scope`/`q`/facets/`sort` land with the full search feature
- * (docs/frontend/02-filtering-and-search.md); reject them explicitly rather than silently
- * ignoring a filter the caller thinks was applied.
+ * What GET /api/artifacts actually supports today (implementation-plan.md Phase 6: `mine` +
+ * `sharedWithMe` with `sinceHours`). `q`/facets/`sort` land with the full search feature (Phase 7,
+ * docs/frontend/02-filtering-and-search.md); reject them explicitly rather than silently ignoring
+ * a filter the caller thinks was applied.
  */
-export const MyArtifactsQuery = ArtifactListQuery.pick({
+export const ArtifactListSupportedQuery = ArtifactListQuery.pick({
   scope: true,
+  sinceHours: true,
   cursor: true,
   limit: true,
 });
-export type MyArtifactsQuery = z.infer<typeof MyArtifactsQuery>;
+export type ArtifactListSupportedQuery = z.infer<typeof ArtifactListSupportedQuery>;
+
+/** GET /api/artifacts/:id/download JSON-negotiated response (Accept: application/json). */
+export const DownloadUrlResponse = z.object({ url: z.string().url() });
+export type DownloadUrlResponse = z.infer<typeof DownloadUrlResponse>;

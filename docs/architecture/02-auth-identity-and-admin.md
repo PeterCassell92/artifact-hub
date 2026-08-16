@@ -54,6 +54,7 @@ user directory (each user keyed by Auth0 subject `idp_sub`):
 
 #### Auth0 tenant config for `/mcp` (verified — set these on each environment's tenant)
 
+Step-by-step with exact navigation/labels: [`development/Auth0configuration.md`](../development/Auth0configuration.md).
 Both are **Dashboard → Settings → [Advanced](https://manage.auth0.com/dashboard/#/tenant/advanced)** toggles:
 
 1. **Dynamic Client Registration** (`enable_dynamic_client_registration`). Consequences to plan for:

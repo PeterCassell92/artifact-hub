@@ -9,6 +9,11 @@ export async function listUsersWithGroups(): Promise<UserWithGroups[]> {
   return prisma.user.findMany({ orderBy: { createdAt: "desc" }, ...withGroups });
 }
 
+/** Single-row lookup for GET /api/me — the SPA's "who am I" bootstrap. */
+export function findUserWithGroupsById(id: string): Promise<UserWithGroups | null> {
+  return prisma.user.findUnique({ where: { id }, ...withGroups });
+}
+
 export function toUserView(user: UserWithGroups): UserView {
   return {
     id: user.id,

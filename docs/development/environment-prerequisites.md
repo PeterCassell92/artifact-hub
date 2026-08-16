@@ -58,6 +58,12 @@ The *structure* is identical across environments; only the **URLs and audience v
   - **Allowed Callback URLs**, **Allowed Logout URLs**, **Allowed Web Origins** = the **SPA origin**
     (dev: `http://localhost:5173` — the **Vite** port, *not* the backend's `:3081`). `@auth0/auth0-react`
     redirects to the app origin, so no `/callback` server route is needed.
+  - **API Access tab → authorize it for the App API.** Registering the API (§2) does **not** by
+    itself let this application request tokens for it — on the SPA application's **API Access**
+    tab, find the App API row and **Edit → enable User-delegated Access** (this is the
+    Authorization-Code/PKCE grant; the M2M "Client Access" column is unrelated and stays off).
+    Skipping this produces `Client "<id>" is not authorized to access resource server "<audience>"`
+    at `loginWithRedirect()`.
   - Client ID → `VITE_AUTH0_CLIENT_ID` (frontend). No secret is used by the SPA.
 - **M2M application** — a **separate** "Machine to Machine" app (not the SPA) for invitation
   provisioning ([`02` §4/§6](../architecture/02-auth-identity-and-admin.md)).
@@ -68,7 +74,8 @@ The *structure* is identical across environments; only the **URLs and audience v
     prod `fly secrets`**). Optional in [`env.ts`](../../apps/backend/src/env.ts) so the backend boots
     without them for login-only runs.
 - **MCP clients (Claude, Role B)** register **themselves** at runtime via **DCR** — do **not** create
-  an app for them. (DCR is enabled later, in the MCP phase — see [`02` §1](../architecture/02-auth-identity-and-admin.md).)
+  an app for them. Requires two tenant-level toggles (Dynamic Client Registration + Resource
+  Parameter Compatibility Profile): [`Auth0configuration.md`](Auth0configuration.md).
 
 ### 2. APIs (audiences / resource servers)
 
@@ -87,15 +94,32 @@ it appears, or tokens are rejected on audience mismatch:
 
 ### 3. Passwordless connection
 
+Getting this to actually produce an email-only login screen takes **all four** of the following —
+each one's omission fails a different way, discovered live setting up `ArtifactHub-Dev`:
+
 - **Authentication → Passwordless → Email**: enable, then **attach it to the SPA application**
   (the connection's **Applications** tab, or the app's **Connections** tab).
 - **Disable Sign Ups** on the connection — enforces the admin-invite-only user set (**R1**,
   [`02` §1.1](../architecture/02-auth-identity-and-admin.md)).
+- **Detach the connections Auth0 auto-enables on every new application.** A fresh application gets
+  `Username-Password-Authentication` (database) and often `google-oauth2` (social) turned on by
+  default — attaching the passwordless `email` connection alone doesn't remove them. On the SPA
+  application's **Connections** tab, toggle those **off**, leaving only `email` on. Symptom if
+  skipped: Universal Login shows a password field + social button + "Sign up" instead of an
+  email-only form.
+- **Authentication → Authentication Profile → Identifier First.** Auth0's default "Identifier +
+  Password" profile doesn't recognize a passwordless-only connection as valid on its combined
+  login form, even with the above two steps done — symptom: `error=invalid_request&error_description=
+  no connections enabled for the client`. Switching the tenant to **Identifier First** fixes
+  routing at the dashboard level. The frontend additionally passes
+  `authorizationParams: { connection: "email" }` on every `loginWithRedirect()` call (see
+  `apps/frontend/src/auth/passwordlessConnection.ts`) so the connection is explicit in code too,
+  rather than relying solely on this tenant-wide setting.
 - Dev magic-link emails arrive at the **real inbox** (e.g. an `INITIAL_ADMIN_EMAILS` address) /
   the **Auth0 log** — **MailCatcher does not catch them** (it's Auth0-sent, not backend-sent).
-- **MCP phase only (future):** to enable DCR, the passwordless email connection must be **promoted
-  to domain-level** (DCR clients are third-party apps limited to domain-level connections). Not
-  needed for SPA login.
+- **For MCP OAuth (DCR):** the passwordless email connection must be **promoted to domain-level**
+  (DCR clients are third-party apps limited to domain-level connections) — not needed for SPA login.
+  Full DCR + Resource Parameter Compatibility Profile setup: [`Auth0configuration.md`](Auth0configuration.md).
 
 ### 4. Env value mapping (quick reference)
 

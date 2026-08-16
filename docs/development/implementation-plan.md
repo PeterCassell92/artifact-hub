@@ -148,6 +148,29 @@ flow, all frontend views + Auth0 wiring, and most tests.
 
 ---
 
+## Phase 7 — Search & filtering
+
+**Goal:** the discovery UX [`docs/frontend/02-filtering-and-search.md`](../frontend/02-filtering-and-search.md)
+describes, actually backed by the API. Phase 6 shipped `My Artifacts`/`Shared With Me` as plain
+paginated lists (`scope` + `sinceHours` only) — this phase is the deferred faceted search on top.
+
+- **Backend:** extend `GET /api/artifacts` to accept the rest of `ArtifactListQuery`
+  (`packages/contracts/src/artifact.ts`) — `q` (full-text across `title`/`description`/`fileName`/
+  `tags`), `contentType`/`kind`/`tags`/`sourceTool` facets, and `sort`. Applies to both
+  `scope=mine` and `scope=sharedWithMe`. Index the faceted columns (`02 §4`: "faceted fields are
+  indexed") — a new Prisma migration for indexes on `contentType`, `kind`, `publishedAt`/
+  `createdAt`, `ownerId`, and the `Tag`/`ArtifactTag` join.
+- **Frontend:** a debounced search box + facet controls (file type, kind, published-date range,
+  publisher, tags, source tool, audience, access state) + sort dropdown on `MyArtifactsPage`/
+  `SharedWithMePage`, replacing the plain-list version. Active filters reflected in the URL
+  (shareable/bookmarkable, `02 §2`).
+- **Tests:** API integration tests per facet + combinations of facets; component tests asserting
+  the filter controls produce the expected query params.
+- **Acceptance:** `02`'s full filter table works end to end; results still always pass per-item
+  `canView` (already true — no change to that invariant, just breadth of *what's listed*).
+
+---
+
 ## Cross-cutting: definition of done per phase
 
 - `yarn lint && yarn typecheck && yarn test` green (the CI gate).

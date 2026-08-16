@@ -92,12 +92,62 @@ describe("GET /api/artifacts*", () => {
       expect(res.body.items.map((a: { title: string }) => a.title).sort()).toEqual(["Mine 1", "Mine 2"]);
     });
 
-    it("rejects scope=sharedWithMe (not yet supported)", async () => {
+  });
+
+  describe("GET /api/artifacts?scope=sharedWithMe", () => {
+    // Global-visibility scope, so other tests' public_authenticated rows can be visible here too
+    // (same test-container DB, no per-test reset) — assert containment, not exact list equality.
+    it("lists visible artifacts I don't own, excluding scope=mine", async () => {
       const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
-      await request(app)
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const title = `Public ${Math.random()}`;
+      await makeArtifact({ ownerId: owner.id, title, audienceType: "public_authenticated" });
+      const ownTitle = `Own ${Math.random()}`;
+      await makeArtifact({ ownerId: viewer.id, title: ownTitle });
+
+      const shared = await request(app)
         .get("/api/artifacts?scope=sharedWithMe")
-        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
-        .expect(400);
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(200);
+      const sharedTitles = shared.body.items.map((a: { title: string }) => a.title);
+      expect(sharedTitles).toContain(title);
+      expect(sharedTitles).not.toContain(ownTitle);
+
+      const mine = await request(app)
+        .get("/api/artifacts?scope=mine")
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(200);
+      expect(mine.body.items.map((a: { title: string }) => a.title)).toEqual([ownTitle]);
+    });
+
+    it("sinceHours excludes artifacts published outside the window", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const recentTitle = `Recent ${Math.random()}`;
+      await makeArtifact({
+        ownerId: owner.id,
+        title: recentTitle,
+        audienceType: "public_authenticated",
+      });
+      const oldTitle = `Old ${Math.random()}`;
+      const old = await makeArtifact({
+        ownerId: owner.id,
+        title: oldTitle,
+        audienceType: "public_authenticated",
+      });
+      await prisma.artifact.update({
+        where: { id: old.id },
+        data: { createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) },
+      });
+
+      const res = await request(app)
+        .get("/api/artifacts?scope=sharedWithMe&sinceHours=24")
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(200);
+
+      const titles = res.body.items.map((a: { title: string }) => a.title);
+      expect(titles).toContain(recentTitle);
+      expect(titles).not.toContain(oldTitle);
     });
   });
 
@@ -464,6 +514,19 @@ describe("GET /api/artifacts*", () => {
       });
       expect(events).toHaveLength(1);
       expect(events[0]?.decision).toBe("denied");
+    });
+
+    it("returns JSON {url} instead of a redirect when Accept: application/json", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      const res = await request(app)
+        .get(`/api/artifacts/${artifact.id}/download`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .set("Accept", "application/json")
+        .expect(200);
+
+      expect(res.body.url).toContain(artifact.storageKey);
     });
   });
 });

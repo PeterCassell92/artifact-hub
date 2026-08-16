@@ -3,6 +3,7 @@ import { requireAdmin, requireAuth } from "../../auth/tokenValidation";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createShareLinkRedemptionRouter } from "./routes/shareLinkRedemption";
 import { createAdminRouter } from "./routes/admin";
+import { createMeRouter } from "./routes/me";
 
 /**
  * The authenticated /api/* surface (docs/architecture/06). Every route requires the API
@@ -17,6 +18,7 @@ export function createApiRouter(): Router {
   router.use("/artifacts", createArtifactsRouter());
   router.use("/s", createShareLinkRedemptionRouter());
   router.use("/admin", requireAdmin(), createAdminRouter());
+  router.use("/me", createMeRouter());
 
   return router;
 }

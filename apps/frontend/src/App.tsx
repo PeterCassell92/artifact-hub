@@ -1,20 +1,40 @@
-import { NotificationRegion } from "./components/NotificationRegion";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AdminRoute } from "./components/AdminRoute";
+import { AppLayout } from "./components/AppLayout";
+import { LoginPage } from "./pages/LoginPage";
+import { AcceptInvitePage } from "./pages/AcceptInvitePage";
+import { ShareLinkRedemptionPage } from "./pages/ShareLinkRedemptionPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { MyArtifactsPage } from "./pages/MyArtifactsPage";
+import { SharedWithMePage } from "./pages/SharedWithMePage";
+import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
+import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { AdminGroupsPage } from "./pages/AdminGroupsPage";
 
-/**
- * Scaffold shell. Real routes/views (Dashboard, My Artifacts, Shared With Me, artifact
- * detail, admin) are defined in docs/frontend/. NotificationRegion is mounted app-wide so
- * every feature has a compliant way to signal success/error (no toasts/alerts).
- */
+/** Route map per docs/frontend/01 §2. No /publish route — publishing is MCP-only. */
 export default function App() {
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <NotificationRegion />
-      <main className="mx-auto max-w-5xl p-6">
-        <h1 className="text-xl font-semibold">Artifact Hub</h1>
-        <p className="mt-2 text-neutral-600">
-          Frontend scaffold. Views to be built per <code>docs/frontend/</code>.
-        </p>
-      </main>
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/accept-invite" element={<AcceptInvitePage />} />
+
+      <Route element={<ProtectedRoute />}>
+        <Route path="/s/:token" element={<ShareLinkRedemptionPage />} />
+
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/artifacts" element={<MyArtifactsPage />} />
+          <Route path="/shared" element={<SharedWithMePage />} />
+          <Route path="/artifacts/:id" element={<ArtifactDetailPage />} />
+
+          <Route element={<AdminRoute />}>
+            <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
+            <Route path="/admin/groups" element={<AdminGroupsPage />} />
+          </Route>
+        </Route>
+      </Route>
+    </Routes>
   );
 }

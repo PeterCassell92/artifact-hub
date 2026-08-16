@@ -1,3 +1,4 @@
+import cors from "cors";
 import express, { type Express } from "express";
 import { prisma } from "./db";
 import { getEnv } from "./env";
@@ -10,6 +11,9 @@ import { createTestMcpTokenRouter } from "./adapters/http/routes/testMcpToken";
 /** Builds the Express app (API + MCP) — exported so integration tests can drive it. */
 export function createApp(): Express {
   const app = express();
+  // SPA (Netlify/localhost) and API (Fly/localhost) are different origins (06 §10, 07). Auth is a
+  // Bearer header, not a cookie, so no credentials mode is needed.
+  app.use(cors({ origin: getEnv().APP_ORIGIN }));
   app.use(express.json({ limit: "1mb" }));
 
   // Liveness: process is up.

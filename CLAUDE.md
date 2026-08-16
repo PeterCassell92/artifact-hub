@@ -81,7 +81,9 @@ UI), [user-journeys/](docs/user-journeys/) (BDD), [development/](docs/developmen
 start here when implementing**; [dev-and-testing-phases-guide.md](docs/development/dev-and-testing-phases-guide.md): local stack,
 test phases, MCP client config; [bruno-mcp-token.md](docs/development/bruno-mcp-token.md): Bruno
 collection to mint an MCP bearer token for manual testing; [environment-prerequisites.md](docs/development/environment-prerequisites.md):
-per-environment external services to set up), [future-features/](docs/future-features/) (speculative
+per-environment external services to set up; [Auth0configuration.md](docs/development/Auth0configuration.md):
+Dynamic Client Registration + Resource Parameter Compatibility Profile setup for real MCP OAuth
+logins), [future-features/](docs/future-features/) (speculative
 post-v1 ideas, e.g. [AI-features.md](docs/future-features/AI-features.md): server-side LLM inference
 over the artifact corpus).
 
