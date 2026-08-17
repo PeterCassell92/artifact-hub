@@ -34,7 +34,7 @@ TODO: produce Loom video
 
 ## 5. Claude Code session logs
 
-TODO: copy across project claude logs
+[w_claude-project-data-copies](w_claude-project-data-copies)
 
 ---
 
