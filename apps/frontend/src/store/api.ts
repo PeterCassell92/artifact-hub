@@ -1,5 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type {
+  AccessEventListResponse,
   AccessPolicyInput,
   ArtifactDetail,
   ArtifactFacetOptions,
@@ -50,7 +51,7 @@ export const api = createApi({
       return headers;
     },
   }),
-  tagTypes: ["Me", "Artifact", "ArtifactList", "Comment", "Relationship", "User", "Group", "Invitation"],
+  tagTypes: ["Me", "Artifact", "ArtifactList", "Comment", "Relationship", "AccessEvent", "User", "Group", "Invitation"],
   endpoints: (builder) => ({
     getMe: builder.query<UserView, void>({
       query: () => "/me",
@@ -133,6 +134,14 @@ export const api = createApi({
         method: "DELETE",
       }),
       invalidatesTags: (_result, _error, { artifactId }) => [{ type: "Relationship", id: artifactId }],
+    }),
+
+    getAccessEvents: builder.query<AccessEventListResponse, { artifactId: string; cursor?: string }>({
+      query: ({ artifactId, cursor }) => ({
+        url: `/artifacts/${artifactId}/access-events`,
+        params: cursor ? { cursor } : {},
+      }),
+      providesTags: (_result, _error, { artifactId }) => [{ type: "AccessEvent", id: artifactId }],
     }),
 
     updatePolicy: builder.mutation<ArtifactDetail, { artifactId: string; policy: AccessPolicyInput }>({
@@ -254,6 +263,7 @@ export const {
   useGetRelationshipsQuery,
   useCreateRelationshipMutation,
   useDeleteRelationshipMutation,
+  useGetAccessEventsQuery,
   useUpdatePolicyMutation,
   useRevokeAccessMutation,
   useCreateArtifactMutation,

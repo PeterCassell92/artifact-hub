@@ -3,6 +3,7 @@ import { useGetArtifactQuery } from "../store/api";
 import { ArtifactViewer } from "../components/ArtifactViewer";
 import { CommentForm } from "../components/CommentForm";
 import { CommentList } from "../components/CommentList";
+import { AccessHistoryPanel } from "../components/AccessHistoryPanel";
 import { AccessPolicyEditor } from "../components/AccessPolicyEditor";
 import { AccessPolicySummary } from "../components/AccessPolicySummary";
 import { RelatedArtifacts } from "../components/RelatedArtifacts";
@@ -134,6 +135,15 @@ export function ArtifactDetailPage() {
           <CommentList artifactId={artifact.id} />
         </div>
       </div>
+
+      {artifact.canViewAccessEvents && (
+        <div>
+          <h2 className="text-sm font-semibold text-neutral-700">Access History</h2>
+          <div className="mt-3">
+            <AccessHistoryPanel artifactId={artifact.id} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

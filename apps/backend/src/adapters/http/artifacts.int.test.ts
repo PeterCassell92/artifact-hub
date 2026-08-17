@@ -476,6 +476,120 @@ describe("GET /api/artifacts*", () => {
     });
   });
 
+  describe("GET /api/artifacts/:id/access-events", () => {
+    async function seedEvent(over: { artifactId: string; userId: string; decision: "allowed" | "denied"; denyReason?: string; at?: Date }) {
+      return prisma.accessEvent.create({
+        data: {
+          artifactId: over.artifactId,
+          userId: over.userId,
+          route: "ui",
+          action: "view",
+          decision: over.decision,
+          denyReason: over.denyReason,
+          at: over.at ?? new Date(),
+        },
+      });
+    }
+
+    it("200s for the owner, newest first, including denied attempts", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+      await seedEvent({ artifactId: artifact.id, userId: viewer.id, decision: "allowed", at: past });
+      await seedEvent({
+        artifactId: artifact.id,
+        userId: viewer.id,
+        decision: "denied",
+        denyReason: "revoked",
+        at: future,
+      });
+
+      const res = await request(app)
+        .get(`/api/artifacts/${artifact.id}/access-events`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      expect(res.body.items).toHaveLength(2);
+      expect(res.body.items[0]).toMatchObject({
+        userId: viewer.id,
+        userName: viewer.name,
+        userEmail: viewer.email,
+        decision: "denied",
+        denyReason: "revoked",
+      });
+      expect(res.body.items[1]).toMatchObject({ decision: "allowed" });
+      expect(res.body.nextCursor).toBeNull();
+    });
+
+    it("200s for an admin who does not own the artifact", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const admin = await prisma.user.create({
+        data: { email: `admin-${Math.random()}@test.local`, name: "Admin", idpSub: `idp|${Math.random()}`, status: "active", role: "admin" },
+      });
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+      await seedEvent({ artifactId: artifact.id, userId: owner.id, decision: "allowed" });
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}/access-events`)
+        .set("Authorization", `Bearer ${tokenFor(admin.idpSub as string)}`)
+        .expect(200);
+    });
+
+    it("403s for a non-owner, non-admin viewer even if they can view the artifact", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}/access-events`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(403);
+    });
+
+    it("404s for an unknown artifact id", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      await request(app)
+        .get("/api/artifacts/00000000-0000-0000-0000-000000000000/access-events")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(404);
+    });
+
+    it("returns an empty list, not an error, for a fresh artifact with no access events", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      const res = await request(app)
+        .get(`/api/artifacts/${artifact.id}/access-events`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ items: [], nextCursor: null });
+    });
+
+    it("paginates with cursor/limit, newest first", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+      for (let i = 0; i < 3; i++) {
+        await seedEvent({ artifactId: artifact.id, userId: viewer.id, decision: "allowed", at: new Date(Date.now() + i * 1000) });
+      }
+
+      const first = await request(app)
+        .get(`/api/artifacts/${artifact.id}/access-events?limit=2`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(first.body.items).toHaveLength(2);
+      expect(first.body.nextCursor).toEqual(expect.any(String));
+
+      const second = await request(app)
+        .get(`/api/artifacts/${artifact.id}/access-events?limit=2&cursor=${first.body.nextCursor}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(second.body.items).toHaveLength(1);
+      expect(second.body.nextCursor).toBeNull();
+    });
+  });
+
   describe("GET /api/artifacts/:id/comments", () => {
     it("200s with comments for a user who can view", async () => {
       const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);

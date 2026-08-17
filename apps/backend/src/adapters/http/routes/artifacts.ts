@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import {
+  AccessEventListResponse,
+  AccessEventListQuery,
   AccessPolicyInput,
   ArtifactDetail,
   ArtifactFacetOptions,
@@ -20,6 +22,7 @@ import {
 } from "contracts";
 import { canCreateShareLink, canManagePolicy, canView } from "../../../core/authz";
 import { computeExpiresAt } from "../../../core/policy";
+import { listAccessEvents } from "../../../database-service/accessEvents";
 import {
   checkViewAndAudit,
   createArtifactPending,
@@ -165,7 +168,40 @@ export function createArtifactsRouter(): Router {
       return;
     }
 
-    res.json(ArtifactDetail.parse(toDetail(artifact, viewer.id, now)));
+    res.json(ArtifactDetail.parse(toDetail(artifact, viewer, now)));
+  });
+
+  // GET /api/artifacts/:id/access-events — the audit-trail read side (docs/models/access-event.md
+  // §6): who viewed/downloaded this artifact and when, including denied attempts. Owner or admin
+  // only — a stricter gate than canView, since this is "who else can see it" rather than "can I
+  // see it". No AccessEvent is written for reading this list itself.
+  router.get("/:id/access-events", async (req, res) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact id");
+      return;
+    }
+
+    const query = AccessEventListQuery.safeParse(req.query);
+    if (!query.success) {
+      sendError(res, 400, "bad_request", "Invalid query", query.error.flatten());
+      return;
+    }
+
+    const artifact = await findArtifactForDetail(params.data.id);
+    if (!artifact) {
+      sendError(res, 404, "not_found", "Artifact not found");
+      return;
+    }
+
+    const viewer = req.viewer!;
+    if (!canManagePolicy(viewer, toPolicy(artifact)) && viewer.role !== "admin") {
+      sendError(res, 403, "forbidden", "Only the owner or an admin can view this artifact's access history");
+      return;
+    }
+
+    const { items, nextCursor } = await listAccessEvents(artifact.id, query.data);
+    res.json(AccessEventListResponse.parse({ items, nextCursor }));
   });
 
   // POST /api/artifacts/:id/finalize — confirms the presigned-PUT upload actually landed
@@ -209,7 +245,7 @@ export function createArtifactsRouter(): Router {
       return;
     }
 
-    res.json(ArtifactDetail.parse(toDetail(result.artifact, viewer.id, new Date())));
+    res.json(ArtifactDetail.parse(toDetail(result.artifact, viewer, new Date())));
   });
 
   // GET /api/artifacts/:id/comments — gated by canView; no AccessEvent (only :id and
@@ -353,7 +389,7 @@ export function createArtifactsRouter(): Router {
     );
 
     const updated = await findArtifactForDetail(artifact.id);
-    res.json(ArtifactDetail.parse(toDetail(updated!, viewer.id, now)));
+    res.json(ArtifactDetail.parse(toDetail(updated!, viewer, now)));
   });
 
   // POST /api/artifacts/:id/revoke — explicit instant cutoff (03 §1a), independent of
@@ -398,7 +434,7 @@ export function createArtifactsRouter(): Router {
     );
 
     const updated = await findArtifactForDetail(artifact.id);
-    res.json(ArtifactDetail.parse(toDetail(updated!, viewer.id, new Date())));
+    res.json(ArtifactDetail.parse(toDetail(updated!, viewer, new Date())));
   });
 
   // POST /api/artifacts/:id/share-links — anyone who can view the artifact; pure locator (03 §5),

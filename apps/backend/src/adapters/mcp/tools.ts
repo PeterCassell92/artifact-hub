@@ -4,6 +4,7 @@ import { MAX_ARTIFACT_SIZE_BYTES } from "contracts";
 import type { AuthenticatedViewer } from "../../auth/tokenValidation";
 import { canCreateShareLink, canManagePolicy, canView } from "../../core/authz";
 import { computeExpiresAt } from "../../core/policy";
+import { listAccessEvents } from "../../database-service/accessEvents";
 import {
   checkViewAndAudit,
   createArtifactPending,
@@ -33,6 +34,7 @@ import { listGroups, toGroupView } from "../../database-service/groups";
 import { getObjectBuffer } from "../../storage/s3";
 import { getEnv } from "../../env";
 import {
+  accessHistoryTable,
   commentsTable,
   groupsTable,
   ownedArtifactsTable,
@@ -47,6 +49,7 @@ import {
   GetUserDetailsInput,
   isValidPublishArtifactInput,
   LinkArtifactsInput,
+  ListAccessHistoryInput,
   ListArtifactRelationshipsInput,
   ListArtifactsInput,
   ListCommentsInput,
@@ -125,6 +128,18 @@ Arguments: id (artifact uuid).
 Result is metadata-only: { comments: [{ id, authorName, body, createdAt }] }, plus a markdown table.
 
 Example: list_comments({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
+
+const GET_ACCESS_HISTORY_DESCRIPTION = `Reads back who has viewed or downloaded an artifact, and when — including denied attempts (revoked, expired, not_in_audience, disabled), newest first. Use when the owner asks who's seen their artifact, whether a revoke actually worked, or wants to audit access.
+
+Owner-only — unlike list_comments/list_artifact_relationships (which only need view access), this tool requires you to OWN the artifact; it refuses for a non-owner even if they can otherwise view the artifact itself. Admins can see this data in the web app, but there is no admin path here — MCP tools never expose admin-scoped actions.
+
+Do NOT use this to check whether you (the caller) can currently view an artifact — use get_artifact for that; this tool answers "who else accessed it," not "can I."
+
+Arguments: id (artifact uuid), cursor (optional, from a prior call's nextCursor), limit (optional, 1-100, default 20).
+
+Result is metadata-only: { accessEvents: [{ id, userId, userName, userEmail, action: "view"|"download", route: "ui"|"share_link"|"mcp", decision: "allowed"|"denied", denyReason?, at }], nextCursor }, plus a markdown table.
+
+Example: get_access_history({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
 
 const LINK_ARTIFACTS_DESCRIPTION = `Links two existing artifacts you own the first of, recording that one is a version/derivative/general relative of the other. Use when the user says something like "this supersedes the old report" or "this is the compiled version of the diagram I published earlier" AFTER both artifacts already exist. For linking at the moment of publishing a brand-new artifact, pass relationships directly to publish_artifact instead — that's the same effect in one fewer call.
 
@@ -429,6 +444,22 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
 
       const comments = await listComments(artifact.id);
       return toolJson({ comments }, commentsTable(comments));
+    }),
+  );
+
+  server.registerTool(
+    "get_access_history",
+    { title: "Get artifact access history", description: GET_ACCESS_HISTORY_DESCRIPTION, inputSchema: ListAccessHistoryInput },
+    wrap("get_access_history", async (args) => {
+      const artifact = await findArtifactForDetail(args.id);
+      if (!artifact) return toolError("Artifact not found.");
+
+      if (!canManagePolicy(viewer, toPolicy(artifact))) {
+        return toolError("Only the artifact's owner can view its access history.");
+      }
+
+      const { items, nextCursor } = await listAccessEvents(artifact.id, { cursor: args.cursor, limit: args.limit });
+      return toolJson({ accessEvents: items, nextCursor }, accessHistoryTable(items));
     }),
   );
 

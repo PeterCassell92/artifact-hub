@@ -102,6 +102,11 @@ Gated by `canView`. Shows:
     redeemer's own access.
 - Every view/download here is recorded as an **AccessEvent** (`route=ui`) — see
   `../models/access-event.md`.
+- **Access History panel** — owner or admin only (hidden entirely otherwise, gated on
+  `ArtifactDetail.canViewAccessEvents`): who viewed/downloaded this artifact and when, including
+  denied attempts (shown with their reason — e.g. revoked, expired, not in audience), newest
+  first, cursor-paginated with a "Load more" button (same pattern as the My Artifacts/Shared With
+  Me lists). Backed by `GET /api/artifacts/:id/access-events` — see `../models/access-event.md` §7.
 
 ## 7. Admin area (`/admin`)
 

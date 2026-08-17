@@ -21,6 +21,7 @@ const baseArtifact: ArtifactDetail = {
   commentCount: 0,
   description: null,
   canManagePolicy: false,
+  canViewAccessEvents: false,
 };
 
 let queryResult: { data?: ArtifactDetail; isLoading: boolean; error?: unknown };
@@ -48,6 +49,9 @@ jest.unstable_mockModule("../components/ShareLinkPanel", () => ({
 }));
 jest.unstable_mockModule("../components/RelatedArtifacts", () => ({
   RelatedArtifacts: () => <div>related artifacts</div>,
+}));
+jest.unstable_mockModule("../components/AccessHistoryPanel", () => ({
+  AccessHistoryPanel: () => <div>access history panel</div>,
 }));
 
 const { ArtifactDetailPage } = await import("./ArtifactDetailPage");
@@ -102,5 +106,23 @@ describe("ArtifactDetailPage — access policy panel by role", () => {
     expect(screen.getByText("policy summary")).toBeInTheDocument();
     expect(screen.queryByText("policy editor")).not.toBeInTheDocument();
     expect(screen.getByText("share link panel")).toBeInTheDocument();
+  });
+});
+
+describe("ArtifactDetailPage — access history panel by role", () => {
+  it("shows the Access History panel when the viewer can view access events (owner or admin)", () => {
+    queryResult = { data: { ...baseArtifact, canViewAccessEvents: true }, isLoading: false };
+    renderPage();
+
+    expect(screen.getByText("Access History")).toBeInTheDocument();
+    expect(screen.getByText("access history panel")).toBeInTheDocument();
+  });
+
+  it("hides the Access History panel for a viewer who is neither owner nor admin", () => {
+    queryResult = { data: { ...baseArtifact, canViewAccessEvents: false }, isLoading: false };
+    renderPage();
+
+    expect(screen.queryByText("Access History")).not.toBeInTheDocument();
+    expect(screen.queryByText("access history panel")).not.toBeInTheDocument();
   });
 });

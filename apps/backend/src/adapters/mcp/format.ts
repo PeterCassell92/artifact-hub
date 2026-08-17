@@ -125,3 +125,23 @@ export function relationshipsByTypeTable(items: RelationshipByTypeRow[]): string
   );
   return ["| type | from | to | note | createdAt |", "|---|---|---|---|---|", ...rows].join("\n");
 }
+
+interface AccessEventRow {
+  userName: string;
+  userEmail: string;
+  action: string;
+  route: string;
+  decision: string;
+  denyReason?: string;
+  at: string;
+}
+
+/** `get_access_history` table — newest first, matching `listAccessEvents()`'s ordering. Denied
+ * rows show the reason in place of a blank cell. */
+export function accessHistoryTable(items: AccessEventRow[]): string {
+  const rows = items.map(
+    (e) =>
+      `| ${e.at.slice(0, 16).replace("T", " ")} | ${e.userName} (${e.userEmail}) | ${e.action} | ${e.route} | ${e.decision === "denied" ? `denied (${e.denyReason})` : "allowed"} |`,
+  );
+  return ["| at | user | action | route | decision |", "|---|---|---|---|---|", ...rows].join("\n");
+}

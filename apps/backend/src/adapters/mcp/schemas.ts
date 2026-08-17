@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ArtifactKind, ArtifactRelationshipInput, AudienceType, CreateCommentInput, ExpiryOption } from "contracts";
+import { AccessEventListQuery, ArtifactKind, ArtifactRelationshipInput, AudienceType, CreateCommentInput, ExpiryOption } from "contracts";
 
 /** Nested `{ type, userEmails?, groupNames? }` shape named in docs/architecture/05 §4 — used by
  * both `publish_artifact` and `set_access_policy` (the two tools that set an artifact's audience). */
@@ -83,6 +83,10 @@ export const SetAccessPolicyInput = z.object({
 export const LinkArtifactsInput = ArtifactRelationshipInput.extend({ fromId: z.string().uuid() });
 
 export const ListArtifactRelationshipsInput = z.object({ id: z.string().uuid() });
+
+/** Owner-only (unlike ListArtifactRelationshipsInput/ListCommentsInput, which only need view
+ * access) — see get_access_history's tool description for why. */
+export const ListAccessHistoryInput = AccessEventListQuery.extend({ id: z.string().uuid() });
 
 /** Corpus-wide, optionally type-filtered — see `ListRelationshipsInput`'s doc comment in
  * contracts for how this differs from `ListArtifactRelationshipsInput` above. */

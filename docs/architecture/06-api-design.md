@@ -45,7 +45,7 @@ The REST API is the HTTP adapter that serves the SPA (including the admin area) 
 | `GET /api/artifacts/:id/download` | Mint ~60s presigned URL and `302` redirect. **Records an AccessEvent** (`route=ui`, `download`) | `canView` |
 | `PUT /api/artifacts/:id/policy` | Change audience + expiry (narrowing is the general **revocation** mechanism, `03` §4) — also clears `revoked` back to `false`. Writes `AdminAuditLog` `policy.update` | owner (`canManagePolicy`) |
 | `POST /api/artifacts/:id/revoke` | Instant, whole-artifact cutoff independent of audience/expiry (`03` §1a) — leaves them untouched for when the owner re-opens it. Writes `AdminAuditLog` `policy.revoke` | owner (`canManagePolicy`) |
-| `GET /api/artifacts/:id/access-events` | Access history for an artifact (audit trail) | owner (or admin) |
+| `GET /api/artifacts/:id/access-events` | Access history for an artifact (audit trail): who viewed/downloaded it and when, including denied attempts — cursor-paginated (`?cursor=&limit=`), newest first. Response: `{ items: [{ id, userId, userName, userEmail, action, route, decision, denyReason?, at }], nextCursor }`. Also exposed to agents as the MCP `get_access_history` tool (owner-only, no admin path — `05`) | owner (or admin) |
 | `GET /api/artifacts/:id/relationships` | List related artifacts | `canView` |
 | `POST /api/artifacts/:id/relationships` | Link a relationship (supersedes/derived_from/related_to) | owner of `:id` (`fromId`) |
 | `DELETE /api/artifacts/:id/relationships/:relationshipId` | Retract a relationship | owner of the relationship's `fromId` |

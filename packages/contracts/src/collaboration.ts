@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ArtifactKind, RelationType } from "./enums";
+import { AccessAction, AccessDecision, AccessRoute, ArtifactKind, RelationType } from "./enums";
 import { paginated } from "./common";
 
 /** A comment as shown in the UI/MCP (body, author name, date). */
@@ -123,3 +123,32 @@ export type RelationshipRow = z.infer<typeof RelationshipRow>;
 
 export const RelationshipListResponse = paginated(RelationshipRow);
 export type RelationshipListResponse = z.infer<typeof RelationshipListResponse>;
+
+/** A row from `GET .../access-events` / `get_access_history` (MCP) — one recorded view or
+ * download attempt, allowed or denied, on the artifact this list is scoped to. `denyReason` is
+ * only set when `decision === "denied"` (e.g. `expired`, `revoked`, `not_in_audience`,
+ * `disabled`). See docs/models/access-event.md. */
+export const AccessEventView = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  userName: z.string(),
+  userEmail: z.string(),
+  action: AccessAction,
+  route: AccessRoute,
+  decision: AccessDecision,
+  denyReason: z.string().optional(),
+  at: z.string().datetime(),
+});
+export type AccessEventView = z.infer<typeof AccessEventView>;
+
+export const AccessEventListResponse = paginated(AccessEventView);
+export type AccessEventListResponse = z.infer<typeof AccessEventListResponse>;
+
+/** `GET .../access-events` query params / `get_access_history` (MCP) non-`id` args — same
+ * `z.coerce` trick as `ListRelationshipsInput` so one schema validates both MCP's typed args and
+ * REST's string query params. */
+export const AccessEventListQuery = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+});
+export type AccessEventListQuery = z.infer<typeof AccessEventListQuery>;

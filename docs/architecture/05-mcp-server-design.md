@@ -81,6 +81,7 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 | `get_artifact` | Fetch **small** content inline for reasoning | `{ id }` | small image → image block; small text/PDF → embedded resource; else → pointer to `artifact://<id>` |
 | `comment_on_artifact` | Add an attributable comment | `{ id, body }` | `{ commentId, createdAt }` |
 | `list_comments` | Read back an artifact's comments, oldest first | `{ id }` | `{ comments: [{ id, authorName, body, createdAt }] }` + markdown table |
+| `get_access_history` | Read back who viewed/downloaded an artifact and when, including denied attempts (revoked/expired/not_in_audience/disabled) — newest first. **Owner-only**, unlike `list_comments`/`list_artifact_relationships` (no admin path over MCP — `02` §7) | `{ id, cursor?, limit? }` | `{ accessEvents: [{ id, userId, userName, userEmail, action, route, decision, denyReason?, at }], nextCursor }` + markdown table |
 | `link_artifacts` | Link an owned artifact to one you can view (`supersedes`/`derived_from`/`related_to`), post-hoc | `{ fromId, toId, type, note? }` | `{ relationshipId, createdAt }` |
 | `list_artifact_relationships` | Read back an artifact's relationships, either direction | `{ id }` | `{ relationships: [{ id, type, direction, note, otherArtifact, createdByName, createdAt }] }` + markdown table |
 | `list_relationships` | Read relationships **across the whole corpus**, optionally filtered to one `type` — for inference over the graph, not one artifact's own connections | `{ type?, cursor?, limit? }` | `{ relationships: [{ id, type, note, from, to, createdByName, createdAt }], nextCursor }` + markdown table |
@@ -214,6 +215,7 @@ deliberately not used in v1.
 | Never return the file as a tool result | Resources only; tools stay metadata-only |
 | Comment via agent | `comment_on_artifact` |
 | Read back an artifact's comments | `list_comments` |
+| "Who has viewed/downloaded my artifact, and when?" | `get_access_history` (owner-only) |
 | Summarise the reviews | Prompt `summarise_artifact_reviews` |
 | Revoke access via agent | `set_access_policy` |
 

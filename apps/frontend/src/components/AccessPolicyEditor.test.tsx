@@ -47,6 +47,7 @@ const artifact: ArtifactDetail = {
   description: null,
   ownerId: "owner-1",
   canManagePolicy: true,
+  canViewAccessEvents: true,
 };
 
 function renderWithStore() {

@@ -8,6 +8,7 @@ import {
   type ArtifactKind,
   type ArtifactSummary,
   type AudienceType,
+  type Role,
 } from "contracts";
 import { prisma } from "../db";
 import { canView, type ArtifactPolicy, type Decision, type Viewer } from "../core/authz";
@@ -70,13 +71,15 @@ export function toSummary(artifact: ArtifactWithPolicyJoins, now: Date): Artifac
 
 export function toDetail(
   artifact: ArtifactWithPolicyJoins,
-  viewerId: string,
+  viewer: { id: string; role: Role },
   now: Date,
 ): ArtifactDetail {
+  const canManagePolicy = artifact.ownerId === viewer.id;
   return {
     ...toSummary(artifact, now),
     description: artifact.description,
-    canManagePolicy: artifact.ownerId === viewerId,
+    canManagePolicy,
+    canViewAccessEvents: canManagePolicy || viewer.role === "admin",
   };
 }
 

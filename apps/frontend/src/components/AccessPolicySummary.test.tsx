@@ -19,6 +19,7 @@ const baseArtifact: ArtifactDetail = {
   commentCount: 0,
   description: null,
   canManagePolicy: false,
+  canViewAccessEvents: false,
 };
 
 describe("AccessPolicySummary", () => {

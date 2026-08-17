@@ -1,5 +1,5 @@
 import { format, formatDistanceToNow } from "date-fns";
-import type { ArtifactRelationshipSummary, ArtifactSummary, AudienceType, ExpiryOption } from "contracts";
+import type { AccessEventView, ArtifactRelationshipSummary, ArtifactSummary, AudienceType, ExpiryOption } from "contracts";
 
 export function formatPublishedAt(iso: string): string {
   return format(new Date(iso), "MMM d, yyyy");
@@ -108,6 +108,36 @@ export function sortLabel(sort: "published" | "title" | "lastAccessed" | "size")
     case "size":
       return "Size (largest first)";
   }
+}
+
+export function accessActionLabel(action: AccessEventView["action"]): string {
+  return action === "download" ? "Downloaded" : "Viewed";
+}
+
+export function accessRouteLabel(route: AccessEventView["route"]): string {
+  switch (route) {
+    case "ui":
+      return "Web";
+    case "share_link":
+      return "Share link";
+    case "mcp":
+      return "Agent";
+  }
+}
+
+const DENY_REASON_LABELS: Record<string, string> = {
+  disabled: "account disabled",
+  expired: "access expired",
+  not_in_audience: "not in audience",
+  revoked: "access revoked",
+};
+
+/** Falls back to the raw reason string for any value not in the map, rather than hiding it —
+ * denyReason is a narrow backend-defined set (core/authz.ts DenyReason) but isn't a shared
+ * contracts enum, so this stays defensive. */
+export function accessDenyReasonLabel(denyReason: string | undefined): string {
+  if (!denyReason) return "denied";
+  return DENY_REASON_LABELS[denyReason] ?? denyReason;
 }
 
 export function formatBytes(bytes: number): string {

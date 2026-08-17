@@ -113,6 +113,9 @@ export type ArtifactListResponse = z.infer<typeof ArtifactListResponse>;
 export const ArtifactDetail = ArtifactSummary.extend({
   description: z.string().nullable(),
   canManagePolicy: z.boolean(),
+  /** Owner or admin — gates whether the SPA shows the Access History panel and whether
+   * `GET .../access-events` will succeed for this viewer. */
+  canViewAccessEvents: z.boolean(),
 });
 export type ArtifactDetail = z.infer<typeof ArtifactDetail>;
 

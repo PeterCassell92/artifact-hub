@@ -61,3 +61,13 @@ revocation/expiry is exactly what the audit trail should show.
 - `(artifactId, at desc)` — per-artifact access history (owner/admin view).
 - `(userId, at desc)` — "what did this user access" (admin/audit).
 - `(route)` / `(decision)` — reporting facets.
+
+## 7. Read surface
+
+The `(artifactId, at desc)` index backs a real read path, not just a future intent:
+`GET /api/artifacts/:id/access-events` (owner or admin, [`06`](../architecture/06-api-design.md) §2)
+and the MCP `get_access_history` tool (owner-only, [`05`](../architecture/05-mcp-server-design.md)
+§4) both return the same cursor-paginated, newest-first shape — including denied attempts, per §4
+above. The SPA surfaces this as the artifact detail page's "Access History" panel, shown only when
+`ArtifactDetail.canViewAccessEvents` is true (see [`frontend/01`](../frontend/01-frontend-overview.md)
+§6).

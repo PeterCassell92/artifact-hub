@@ -137,6 +137,7 @@ describe("POST /mcp (HTTP black-box)", () => {
       [
         "comment_on_artifact",
         "create_share_link",
+        "get_access_history",
         "get_artifact",
         "get_user_details",
         "link_artifacts",
