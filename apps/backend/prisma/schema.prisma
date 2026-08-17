@@ -158,6 +158,10 @@ model Artifact {
   // access policy (one per artifact — see docs/architecture/03)
   audienceType      AudienceType @default(specific_users)
   expiresAt         DateTime? // null = never
+  // Owner-initiated instant cutoff, independent of expiresAt (03 §1a) — distinct from a bucketed
+  // expiry naturally elapsing so the UI can tell "you revoked this" apart from "its window ran
+  // out on its own". Saving a new policy (PUT/set_access_policy) always clears this back to false.
+  revoked           Boolean      @default(false)
   policyUpdatedAt   DateTime     @default(now())
   policyUpdatedById String? // owner who last changed the policy
 

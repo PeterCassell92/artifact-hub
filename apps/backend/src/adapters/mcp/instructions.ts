@@ -26,7 +26,8 @@ Collaborating:
 - The "summarise_artifact_reviews" prompt is user-invoked (e.g. a slash command) and asks the client's own model to summarise an artifact's comments — this server never calls an LLM itself.
 
 Managing access:
-- "set_access_policy" (owner only) changes an owned artifact's audience/expiry — this is how access is revoked; there is no separate revoke action.
+- "set_access_policy" (owner only) changes an owned artifact's audience/expiry — narrowing it is the general way access is revoked. Expiry buckets (24h/7d/30d) are relative to when the artifact was PUBLISHED, not to whenever this tool happens to be called — so picking one can land in the past if it's been a while since publish, which immediately denies everyone but the owner (that's expected, not an error).
+- "revoke_access" (owner only) is a SEPARATE, instant whole-artifact cutoff for when the user wants access gone right now, independent of audience/expiry — use this instead of set_access_policy when they say something like "pull that down immediately". It doesn't touch the underlying audience/expiry; calling set_access_policy afterward (even with the same settings) clears the cutoff.
 - "create_share_link" (anyone who can currently view the artifact, not just the owner) mints a locator link for others to open. The link is not a bearer token: opening it still re-checks the current access policy, so a non-owner minting one can never grant more access than their own view access already allows.
 
 Companion web app:

@@ -52,6 +52,9 @@ export const ArtifactSummary = z.object({
   audienceType: AudienceType,
   expiresAt: z.string().datetime().nullable(),
   isExpired: z.boolean(),
+  /** Owner-initiated instant cutoff (03 §1a) — distinct from `isExpired`'s natural bucketed
+   * expiry. Saving a new policy always clears this back to false. */
+  revoked: z.boolean(),
   commentCount: z.number().int().nonnegative(),
 });
 export type ArtifactSummary = z.infer<typeof ArtifactSummary>;

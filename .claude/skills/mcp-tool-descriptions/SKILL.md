@@ -30,8 +30,9 @@ Every tool description must cover, in order:
 - **Files are Resources, not tool results.** Any tool touching an artifact must say bytes are
   delivered via the `artifact://<id>` Resource and are never returned inline.
 - **Authorization is by the caller's token.** Never mention links/presigned URLs as inputs.
-- **Owner-only tools** (`set_access_policy`, `create_share_link`) must state they act only on
-  artifacts the caller owns.
+- **Owner-only tools** (`set_access_policy`, `revoke_access`) must state they act only on
+  artifacts the caller owns. `create_share_link` is NOT owner-only — it only needs `canView` (a
+  share link is a pure locator, `03` §5), so state that explicitly rather than assuming ownership.
 - **Never expose admin / user-management over MCP.** Do not add tools for invite / promote /
   demote / disable / group management — those are human-UI only (`02` §7). MCP tokens are
   identity-only and cannot reach `/api/admin/*` (R3). If a request would need an admin action,

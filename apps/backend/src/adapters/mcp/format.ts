@@ -37,6 +37,7 @@ interface OwnedRow extends TypedRow {
   audienceType: string;
   expiresAt: string | null;
   isExpired: boolean;
+  revoked: boolean;
 }
 
 const AUDIENCE_LABELS: Record<string, string> = {
@@ -47,9 +48,12 @@ const AUDIENCE_LABELS: Record<string, string> = {
 
 function policySummary(row: OwnedRow): string {
   const audience = AUDIENCE_LABELS[row.audienceType] ?? row.audienceType;
-  if (!row.expiresAt) return `${audience}, never expires`;
-  const date = row.expiresAt.slice(0, 10);
-  return `${audience}, ${row.isExpired ? `expired ${date}` : `expires ${date}`}`;
+  const expiry = !row.expiresAt
+    ? "never expires"
+    : `${row.isExpired ? "expired" : "expires"} ${row.expiresAt.slice(0, 10)}`;
+  // Independent of expiry (03 §1a) — an artifact can be revoked well before its bucketed window
+  // would otherwise have elapsed, so this is called out separately, not folded into "expired".
+  return row.revoked ? `REVOKED, ${audience}, ${expiry}` : `${audience}, ${expiry}`;
 }
 
 /** "My Artifacts" table shape from docs/architecture/05 §4 ("id, title, filetype, createdAt, policy summary"). */

@@ -48,7 +48,8 @@ we capture a broad, mostly-optional set to make discovery powerful:
 | `audienceType` | enum | yes | `public_authenticated` \| `specific_users` \| `user_groups` | yes (mine: by audience) |
 | `allowedUserIds` | uuid[] (join) | cond | For `specific_users` | — |
 | `allowedGroupIds` | uuid[] (join) | cond | For `user_groups` | — |
-| `expiresAt` | timestamp \| null | yes | Null = never; else absolute expiry (24h/7d/30d bucket) | yes (active/expired) |
+| `expiresAt` | timestamp \| null | yes | Null = never; else absolute expiry, `publishedAt` + 24h/7d/30d bucket (not "now" at edit time — arch/03 §1) | yes (active/expired) |
+| `revoked` | boolean | yes | Owner-initiated instant cutoff, independent of `expiresAt` (arch/03 §1a). Cleared back to `false` whenever a new policy is saved. | no |
 | `policyUpdatedAt` | timestamp | yes | Last policy change (revocation audit) | — |
 | `policyUpdatedById` | uuid → User | no | Who last changed the policy (owner) | — |
 
@@ -57,6 +58,7 @@ we capture a broad, mostly-optional set to make discovery powerful:
 | Field | How | Used by |
 |-------|-----|---------|
 | `isExpired` | `expiresAt != null && now >= expiresAt` | UI badge, filters |
+| `status` (SPA-only label, not an API field) | `revoked ? "Revoked" : isExpired ? "Expired" : "Accessible"` | Artifact detail page, owner's policy panel |
 | `viewerCanView` | `canView(currentUser, artifact)` (arch/03) | UI gating |
 | `commentCount` | count of Comments | UI list |
 | `lastAccessedAt` | max(AccessEvent.at); **stored** (denormalized column, indexed) so `sort=lastAccessed` can cursor-paginate — see architecture/01 §5 decision #45 | "recently accessed" / `sort=lastAccessed` |

@@ -31,6 +31,7 @@ export function toPolicy(artifact: ArtifactWithPolicyJoins): ArtifactPolicy {
     expiresAt: artifact.expiresAt,
     allowedUserIds: artifact.allowedUsers.map((a) => a.userId),
     allowedGroupIds: artifact.allowedGroups.map((a) => a.groupId),
+    revoked: artifact.revoked,
   };
 }
 
@@ -56,6 +57,7 @@ export function toSummary(artifact: ArtifactWithPolicyJoins, now: Date): Artifac
     audienceType: artifact.audienceType,
     expiresAt: artifact.expiresAt?.toISOString() ?? null,
     isExpired: isExpired(artifact.expiresAt, now),
+    revoked: artifact.revoked,
     commentCount: artifact._count.comments,
   };
 }
@@ -177,6 +179,7 @@ function scopeEligibilityWhere(
   return {
     AND: [
       { ownerId: { not: viewerId } },
+      { revoked: false },
       { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
       { OR: audienceClauses },
     ],
@@ -226,7 +229,13 @@ export interface UpdateArtifactPolicyInput {
   updatedById: string;
 }
 
-/** Revocation is just re-writing the policy (docs/architecture/03 §4) — no separate mechanism. */
+/**
+ * Narrowing the policy (docs/architecture/03 §4) is the general revocation mechanism. Always
+ * clears `revoked` back to `false` — applying a fresh, deliberate policy is the opposite of the
+ * explicit instant cutoff `revokeArtifactAccess` sets, so it un-does it as a side effect (this is
+ * the persistence half of "Re-open Access": the owner unlocks the form client-side, then Save
+ * here is what actually clears the flag).
+ */
 export async function updateArtifactPolicy(
   artifactId: string,
   input: UpdateArtifactPolicyInput,
@@ -239,6 +248,7 @@ export async function updateArtifactPolicy(
       data: {
         audienceType: input.audienceType,
         expiresAt: input.expiresAt,
+        revoked: false,
         policyUpdatedAt: new Date(),
         policyUpdatedById: input.updatedById,
       },
@@ -250,6 +260,19 @@ export async function updateArtifactPolicy(
       prisma.artifactAllowedGroup.create({ data: { artifactId, groupId } }),
     ),
   ]);
+}
+
+/**
+ * The explicit "Revoke all access" cutoff — sets `revoked` without touching audience/expiry, so
+ * whatever policy was in effect is preserved (visible again once the owner re-opens it) rather
+ * than destroyed. Independent of `expiresAt`/`isExpired` (03 §1a) so the UI can tell "you revoked
+ * this" apart from "its expiry window ran out on its own".
+ */
+export async function revokeArtifactAccess(artifactId: string, revokedById: string): Promise<void> {
+  await prisma.artifact.update({
+    where: { id: artifactId },
+    data: { revoked: true, policyUpdatedAt: new Date(), policyUpdatedById: revokedById },
+  });
 }
 
 /**

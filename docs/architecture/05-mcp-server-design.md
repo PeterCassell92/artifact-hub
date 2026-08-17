@@ -81,7 +81,8 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 | `get_artifact` | Fetch **small** content inline for reasoning | `{ id }` | small image → image block; small text/PDF → embedded resource; else → pointer to `artifact://<id>` |
 | `comment_on_artifact` | Add an attributable comment | `{ id, body }` | `{ commentId, createdAt }` |
 | `create_share_link` | Mint a locator link for an artifact you can view (owner or not) | `{ id }` | `{ url }` |
-| `set_access_policy` | Change an owned artifact's audience/expiry (revoke) | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
+| `set_access_policy` | Change an owned artifact's audience/expiry — narrowing is the general revocation mechanism | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
+| `revoke_access` | Instant, whole-artifact cutoff for an owned artifact — independent of audience/expiry (`03` §1a) | `{ id }` | `{ ok, revokedAt }` |
 | `get_user_details` | Caller's own identity — email, name, role, group names | `{}` | `{ email, name, role, groupNames }` |
 | `list_groups` | Every group in the org, regardless of the caller's membership | `{}` | `{ groups: [{ name, description }] }` + markdown table |
 

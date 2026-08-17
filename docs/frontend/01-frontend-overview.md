@@ -68,12 +68,26 @@ Gated by `canView`. Shows:
 
 - **Viewer/preview** appropriate to the type (PDF inline, image render, HTML in a **sandboxed
   iframe** off the sandbox origin — arch/03 §7 — Mermaid/Markdown rendered), plus **Download**.
-- **Metadata panel** — filetype, size, published date, publisher, tags, kind, source tool, and
-  other captured metadata (see `../models/artifact.md`).
+- **Metadata panel** — filetype, size, **published date and time**, publisher, tags, kind, source
+  tool, and other captured metadata (see `../models/artifact.md`).
 - **Comments** — list with **body, author name, date**; an add-comment box (requires view
   permission; always authenticated).
-- **Owner controls** (only if I own it): **access policy editor** (audience + expiry buckets
-  24h/7d/30d/never → revocation), **share-link** create/copy/revoke.
+- **Access policy panel** — shown to every viewer, not just the owner:
+  - **Owner**: an editable **access policy editor** (audience + expiry buckets 24h/7d/30d/never,
+    each computed relative to the artifact's **published date/time**, not to when it's edited —
+    an info tooltip on the Expiry control says so). Selecting a bucket shows the resulting expiry
+    date/time as inline info text below the field, live, before saving. If that computed date has
+    already passed (relative to publish), inline warning text also appears, since saving would
+    immediately deny everyone but the owner. A **"Revoke all access"** button (red, confirm dialog) sits
+    next to Save — an instant, whole-artifact cutoff independent of the audience/expiry fields
+    (arch/03 §1a). Once revoked, the fields and Save button are disabled, a **"Revoked"** status
+    shows, and the button becomes **"Re-open Access"** (unlocks the fields for editing; nothing
+    is persisted until Save is clicked again, which flips status back to **"Accessible"**).
+  - **Non-owner viewer**: a **read-only** summary of the same audience/expiry — they can see the
+    policy but can't change it (arch/03 §1 — owner-only).
+  - **Share link** create/copy — any viewer who can currently view the artifact can mint one
+    (arch/03 §1, §5), not just the owner; it's a pure locator, never more permissive than the
+    redeemer's own access.
 - Every view/download here is recorded as an **AccessEvent** (`route=ui`) — see
   `../models/access-event.md`.
 

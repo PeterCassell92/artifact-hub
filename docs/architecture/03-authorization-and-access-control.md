@@ -18,11 +18,41 @@ Each artifact carries exactly **one** owner-controlled policy:
   - `user_groups` — members of a listed set of groups (`artifact_allowed_groups`).
 - **`expiry`** — one of `24h`, `7d`, `30d`, `never`, stored as `expires_at` (a timestamp, or
   `NULL` for `never`). The buckets are a UI convenience; the stored value is the absolute
-  timestamp computed at publish/policy-update time.
+  timestamp computed **relative to the artifact's `publishedAt` (`createdAt`)**, not to whenever
+  the policy happens to be edited — "expires in 7 days" is a fixed deadline set at publish time,
+  not something that silently resets every time the owner tweaks the audience without touching
+  expiry. This means picking a bucket can compute an `expires_at` already in the past (e.g. a
+  policy edited 10 days after publish choosing "7d") — that's allowed, and is simply another way
+  of narrowing a policy into non-access (§4), same as it always was for an explicit past date.
+- **`revoked`** (§1a) — an owner-initiated instant cutoff, independent of `expires_at`.
 
 Only the **owner** can create or change the policy. There is no per-link policy; **share
 links are pure locators** (see §5) — so *minting* a link is a separate, weaker permission than
 *changing the policy*: any viewer who passes `canView` may mint one (§5), not just the owner.
+
+### 1a. Revoking (instant cutoff, distinct from expiry)
+
+`revoked` is a boolean the owner can set directly — via the SPA's **"Revoke all access"** button
+(`AccessPolicyEditor`) or the MCP **`revoke_access`** tool — to cut off every non-owner viewer
+**immediately**, without touching `audience_type`/`expires_at`/allowed lists underneath. It exists
+alongside `expires_at` rather than reusing it because the two answer different questions and the
+UI needs to tell them apart:
+
+- `expires_at` in the past ⇒ the artifact's bucketed window **elapsed on its own** — status
+  **"Expired"**.
+- `revoked = true` ⇒ the owner **explicitly** cut it off, regardless of whether the expiry window
+  had elapsed — status **"Revoked"**.
+
+Both states deny every non-owner (`canView` checks `revoked` before `expires_at` — see §2); the
+owner always retains access to either, since they need to see the artifact to undo it.
+**Un-revoking** is not a separate action: saving *any* new policy (`PUT .../policy` /
+`set_access_policy`) — even a functionally identical one — clears `revoked` back to `false` as a
+side effect, same as narrowing-to-deny was already "revocation" with no separate un-revoke either.
+The SPA's "Re-open Access" button is purely a client-side unlock of the (until-then-disabled)
+policy form; nothing is persisted until the owner actually clicks Save.
+
+Status strings shown in the SPA, in priority order: **Revoked** (`revoked = true`) → **Expired**
+(`isExpired = true`, `revoked = false`) → **Accessible** (neither).
 
 ---
 
@@ -35,6 +65,8 @@ share-link redemption endpoint. Pseudocode:
 canView(user, artifact):
     if user.id == artifact.owner_id:          # owner always retains access
         return ALLOW
+    if artifact.revoked:
+        return DENY (revoked)                 # explicit instant cutoff (§1a) — checked before expiry
     if artifact.expires_at != NULL and now() >= artifact.expires_at:
         return DENY (expired)
     switch artifact.audience_type:

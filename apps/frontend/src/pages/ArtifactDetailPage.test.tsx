@@ -17,6 +17,7 @@ const baseArtifact: ArtifactDetail = {
   audienceType: "public_authenticated",
   expiresAt: null,
   isExpired: false,
+  revoked: false,
   commentCount: 0,
   description: null,
   canManagePolicy: false,

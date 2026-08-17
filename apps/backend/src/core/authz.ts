@@ -16,9 +16,12 @@ export interface ArtifactPolicy {
   expiresAt: Date | null; // null = never
   allowedUserIds: string[];
   allowedGroupIds: string[];
+  // Owner-initiated instant cutoff — independent of expiresAt, so a naturally elapsed bucketed
+  // expiry ("expired") stays distinguishable from an explicit "Revoke all access" ("revoked").
+  revoked: boolean;
 }
 
-export type DenyReason = "disabled" | "expired" | "not_in_audience";
+export type DenyReason = "disabled" | "expired" | "not_in_audience" | "revoked";
 
 export interface Decision {
   allowed: boolean;
@@ -37,8 +40,11 @@ export function canView(
   // Disabled users are blocked immediately (R4), even the owner.
   if (viewer.status === "disabled") return deny("disabled");
 
-  // Owner always retains access — even after expiry ("My Artifacts").
+  // Owner always retains access — even after expiry or an explicit revoke ("My Artifacts"),
+  // since they need to be able to see the artifact to re-open it.
   if (viewer.id === policy.ownerId) return ALLOW;
+
+  if (policy.revoked) return deny("revoked");
 
   if (policy.expiresAt !== null && now >= policy.expiresAt) return deny("expired");
 

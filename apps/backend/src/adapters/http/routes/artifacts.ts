@@ -20,6 +20,7 @@ import {
   listOwnedArtifacts,
   listSharedWithMe,
   resolveAudienceInput,
+  revokeArtifactAccess,
   toDetail,
   toPolicy,
   toSummary,
@@ -196,7 +197,11 @@ export function createArtifactsRouter(): Router {
     }
 
     const now = new Date();
-    const expiresAt = computeExpiresAt(body.data.expiry, now);
+    // Relative to publishedAt (createdAt), not this edit — a "7 days" window is a fixed deadline
+    // set at publish time, not something that silently resets every time the owner tweaks the
+    // audience without touching expiry. Can land in the past — that's the normal, allowed way to
+    // narrow a policy into non-access (03 §4), same as picking a past expiry always was.
+    const expiresAt = computeExpiresAt(body.data.expiry, artifact.createdAt);
 
     await updateArtifactPolicy(artifact.id, {
       audienceType: resolved.audienceType,
@@ -224,6 +229,43 @@ export function createArtifactsRouter(): Router {
 
     const updated = await findArtifactForDetail(artifact.id);
     res.json(ArtifactDetail.parse(toDetail(updated!, viewer.id, now)));
+  });
+
+  // POST /api/artifacts/:id/revoke — explicit instant cutoff (03 §1a), independent of
+  // audienceType/expiresAt (left untouched, so the owner sees the prior policy again once they
+  // re-open it). Owner-only (canManagePolicy); audit-logged (policy.revoke). Saving a fresh
+  // policy via PUT .../policy is what clears it back — see updateArtifactPolicy.
+  router.post("/:id/revoke", async (req, res) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact id");
+      return;
+    }
+
+    const artifact = await findArtifactForDetail(params.data.id);
+    if (!artifact) {
+      sendError(res, 404, "not_found", "Artifact not found");
+      return;
+    }
+
+    const viewer = req.viewer!;
+    if (!canManagePolicy(viewer, toPolicy(artifact))) {
+      sendError(res, 403, "forbidden", "Only the owner can revoke this artifact's access");
+      return;
+    }
+
+    await revokeArtifactAccess(artifact.id, viewer.id);
+
+    await recordAdminAuditLog({
+      actorId: viewer.id,
+      action: "policy.revoke",
+      targetType: "artifact",
+      targetId: artifact.id,
+      metadata: {},
+    });
+
+    const updated = await findArtifactForDetail(artifact.id);
+    res.json(ArtifactDetail.parse(toDetail(updated!, viewer.id, new Date())));
   });
 
   // POST /api/artifacts/:id/share-links — anyone who can view the artifact; pure locator (03 §5),

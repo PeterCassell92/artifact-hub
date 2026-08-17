@@ -116,6 +116,13 @@ export const api = createApi({
       ],
     }),
 
+    // Instant, whole-artifact cutoff (03 §1a) — independent of updatePolicy, which is what clears
+    // it back (saving any policy always un-revokes as a side effect).
+    revokeAccess: builder.mutation<ArtifactDetail, string>({
+      query: (artifactId) => ({ url: `/artifacts/${artifactId}/revoke`, method: "POST" }),
+      invalidatesTags: (_result, _error, artifactId) => [{ type: "Artifact", id: artifactId }, "ArtifactList"],
+    }),
+
     createShareLink: builder.mutation<ShareLinkView, string>({
       query: (artifactId) => ({ url: `/artifacts/${artifactId}/share-links`, method: "POST" }),
     }),
@@ -190,6 +197,7 @@ export const {
   useGetCommentsQuery,
   useAddCommentMutation,
   useUpdatePolicyMutation,
+  useRevokeAccessMutation,
   useCreateShareLinkMutation,
   useResolveDownloadUrlMutation,
   useGetUsersQuery,

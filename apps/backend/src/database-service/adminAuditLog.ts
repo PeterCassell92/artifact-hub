@@ -12,7 +12,7 @@ export interface RecordAdminAuditLogInput {
 /**
  * Administrative-action audit trail (docs/models/system.md) — distinct from AccessEvent, which
  * covers artifact reads. Actions used so far: invite.create, invitation.accept, role.change,
- * user.group_change, user.disable, policy.update, share_link.create.
+ * user.group_change, user.disable, policy.update, policy.revoke, share_link.create.
  */
 export async function recordAdminAuditLog(input: RecordAdminAuditLogInput): Promise<void> {
   await prisma.adminAuditLog.create({

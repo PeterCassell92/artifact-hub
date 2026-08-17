@@ -1,12 +1,15 @@
 import { jest } from "@jest/globals";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
+import { format } from "date-fns";
 import type { ArtifactDetail } from "contracts";
 import { makeStore } from "../store/store";
 
 const unwrap = jest.fn<() => Promise<ArtifactDetail>>();
 const updatePolicy = jest.fn(() => ({ unwrap }));
+const revokeUnwrap = jest.fn<() => Promise<ArtifactDetail>>();
+const revokeAccess = jest.fn(() => ({ unwrap: revokeUnwrap }));
 
 const groups = [
   { id: "group-1", name: "Engineering", description: null, createdAt: "2026-01-01T00:00:00.000Z" },
@@ -15,6 +18,7 @@ const groups = [
 
 jest.unstable_mockModule("../store/api", () => ({
   useUpdatePolicyMutation: () => [updatePolicy, { isLoading: false }],
+  useRevokeAccessMutation: () => [revokeAccess, { isLoading: false }],
   useListGroupsQuery: () => ({ data: groups }),
 }));
 
@@ -33,6 +37,7 @@ const artifact: ArtifactDetail = {
   audienceType: "specific_users",
   expiresAt: null,
   isExpired: false,
+  revoked: false,
   commentCount: 0,
   description: null,
   ownerId: "owner-1",
@@ -51,6 +56,8 @@ describe("AccessPolicyEditor", () => {
   beforeEach(() => {
     updatePolicy.mockClear();
     unwrap.mockReset().mockResolvedValue(artifact);
+    revokeAccess.mockClear();
+    revokeUnwrap.mockReset().mockResolvedValue({ ...artifact, revoked: true });
   });
 
   it("builds the specific_users payload from the entered emails and expiry", async () => {
@@ -103,5 +110,98 @@ describe("AccessPolicyEditor", () => {
       artifactId: "artifact-1",
       policy: { audienceType: "public_authenticated", expiry: "never" },
     });
+  });
+
+  it("shows Accessible status and a red Revoke all access button for a live policy", () => {
+    renderWithStore();
+
+    expect(screen.getByText("Accessible")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revoke all access/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /re-open access/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the computed expiry date/time below the field as the selection changes", async () => {
+    renderWithStore();
+    const user = userEvent.setup();
+
+    expect(screen.getByText("Access never expires.")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/expiry/i), "24h");
+
+    const expected = new Date(new Date(artifact.publishedAt).getTime() + 24 * 60 * 60 * 1000);
+    expect(screen.getByText(`Access will expire ${format(expected, "MMM d, yyyy 'at' h:mm a")}.`)).toBeInTheDocument();
+  });
+
+  it("warns before saving an expiry that has already passed relative to publishedAt", async () => {
+    // Published 10 days ago (well before "now") — "7d" from publish already elapsed.
+    const staleArtifact = { ...artifact, publishedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString() };
+    render(
+      <Provider store={makeStore()}>
+        <AccessPolicyEditor artifact={staleArtifact} />
+      </Provider>,
+    );
+    const user = userEvent.setup();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/expiry/i), "7d");
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/immediately revoke access/i);
+  });
+
+  it("asks for confirmation before revoking, then calls the mutation", async () => {
+    renderWithStore();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /revoke all access/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent(/immediately lose access/i);
+
+    await user.click(within(dialog).getByRole("button", { name: /revoke all access/i }));
+
+    expect(revokeAccess).toHaveBeenCalledWith("artifact-1");
+  });
+
+  it("cancelling the confirmation dialog does not revoke", async () => {
+    renderWithStore();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /revoke all access/i }));
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(revokeAccess).not.toHaveBeenCalled();
+  });
+
+  it("disables the form and Save, and offers Re-open Access, once revoked", () => {
+    render(
+      <Provider store={makeStore()}>
+        <AccessPolicyEditor artifact={{ ...artifact, revoked: true }} />
+      </Provider>,
+    );
+
+    expect(screen.getByText("Revoked")).toBeInTheDocument();
+    expect(screen.getByLabelText(/audience/i)).toBeDisabled();
+    expect(screen.getByLabelText(/expiry/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /save policy/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /re-open access/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^revoke all access$/i })).not.toBeInTheDocument();
+  });
+
+  it("Re-open Access unlocks the form client-side without calling any mutation", async () => {
+    render(
+      <Provider store={makeStore()}>
+        <AccessPolicyEditor artifact={{ ...artifact, revoked: true }} />
+      </Provider>,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /re-open access/i }));
+
+    expect(screen.getByLabelText(/audience/i)).toBeEnabled();
+    expect(screen.getByRole("button", { name: /save policy/i })).toBeEnabled();
+    // Status stays "Revoked" until the owner actually saves a fresh policy.
+    expect(screen.getByText("Revoked")).toBeInTheDocument();
+    expect(revokeAccess).not.toHaveBeenCalled();
+    expect(updatePolicy).not.toHaveBeenCalled();
   });
 });

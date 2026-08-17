@@ -127,7 +127,8 @@ model Artifact {
 
   // ── access policy (one per artifact) ──
   audienceType  AudienceType @default(specific_users)
-  expiresAt     DateTime?                       // null = never
+  expiresAt     DateTime?                       // null = never; relative to publishedAt, not edit time
+  revoked       Boolean      @default(false)     // explicit instant cutoff, independent of expiresAt (03 §1a)
   policyUpdatedAt DateTime   @default(now())
   policyUpdatedById String?
 
@@ -260,13 +261,16 @@ model AccessEvent {                            // artifact ACCESS audit trail (s
 
 ## 3. Notes on modelling choices
 
-- **Policy on the artifact, not the link.** `audienceType` + `expiresAt` on `Artifact` = one
-  policy per artifact; `ArtifactAllowedUser` / `ArtifactAllowedGroup` back the `specific_users`
-  / `user_groups` audiences. This is what `03`'s `canView` reads.
+- **Policy on the artifact, not the link.** `audienceType` + `expiresAt` + `revoked` on `Artifact`
+  = one policy per artifact; `ArtifactAllowedUser` / `ArtifactAllowedGroup` back the
+  `specific_users` / `user_groups` audiences. This is what `03`'s `canView` reads.
 - **`expiresAt` nullable = "never".** The 24h/7d/30d/never buckets map to an absolute timestamp
-  (or null) computed at publish/policy-update time.
-- **Share links carry no policy.** `revoked` is an optional convenience to retire a single link;
-  the artifact policy remains authoritative.
+  (or null) computed relative to `publishedAt`/`createdAt` — a fixed deadline set at publish time,
+  not "now" at whatever moment the policy is later edited (`03` §1).
+- **`Artifact.revoked` vs `ShareLink.revoked` — two different, unrelated flags of the same name.**
+  `Artifact.revoked` (`03` §1a) is the owner's instant, whole-artifact cutoff — it's what `canView`
+  checks. `ShareLink.revoked` below is an optional convenience to retire one specific link; the
+  artifact policy remains authoritative regardless of either.
 - **Rich artifact metadata.** Beyond `metadata` JSONB (free-form), we store faceted columns
   (`kind`, `sourceTool`, `format`, `language`, …) plus `Tag`/`ArtifactTag`, because these drive
   the frontend filters/search. Full catalogue: [`../models/artifact.md`](../models/artifact.md).

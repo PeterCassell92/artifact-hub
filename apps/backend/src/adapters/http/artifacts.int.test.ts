@@ -57,6 +57,7 @@ describe("GET /api/artifacts*", () => {
     expiresAt?: Date | null;
     allowedUserIds?: string[];
     allowedGroupIds?: string[];
+    createdAt?: Date;
   }) {
     const artifact = await prisma.artifact.create({
       data: {
@@ -71,6 +72,7 @@ describe("GET /api/artifacts*", () => {
         sizeBytes: BigInt(1024),
         audienceType: over.audienceType ?? "specific_users",
         expiresAt: over.expiresAt ?? null,
+        ...(over.createdAt ? { createdAt: over.createdAt } : {}),
       },
     });
 
@@ -603,6 +605,90 @@ describe("GET /api/artifacts*", () => {
         .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
         .send({ audienceType: "specific_users", userEmails: ["nobody@test.local"], expiry: "never" })
         .expect(400);
+    });
+
+    it("computes the bucketed expiry relative to publishedAt, not edit time — can land in the past", async () => {
+      // Published 10 days ago; choosing "7d" here means "7 days after publish", which already
+      // elapsed 3 days ago — not "7 days from right now". Editing the policy without touching
+      // expiry shouldn't silently push the deadline further out just because time passed.
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const publishedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      const artifact = await makeArtifact({ ownerId: owner.id, createdAt: publishedAt });
+
+      const res = await request(app)
+        .put(`/api/artifacts/${artifact.id}/policy`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ audienceType: "public_authenticated", expiry: "7d" })
+        .expect(200);
+
+      const expectedExpiresAt = new Date(publishedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+      expect(new Date(res.body.expiresAt).getTime()).toBe(expectedExpiresAt.getTime());
+      expect(res.body.isExpired).toBe(true);
+    });
+  });
+
+  describe("POST /api/artifacts/:id/revoke", () => {
+    it("immediately cuts off non-owners while the owner keeps access, and audits it", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(200);
+
+      const res = await request(app)
+        .post(`/api/artifacts/${artifact.id}/revoke`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(res.body.revoked).toBe(true);
+
+      const denied = await request(app)
+        .get(`/api/artifacts/${artifact.id}`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(403);
+      expect(denied.body.error.details.reason).toBe("revoked");
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      const auditRows = await prisma.adminAuditLog.findMany({
+        where: { targetType: "artifact", targetId: artifact.id, action: "policy.revoke" },
+      });
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toMatchObject({ actorId: owner.id });
+    });
+
+    it("403s a non-owner trying to revoke", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const other = await makeActiveUser(`other-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      await request(app)
+        .post(`/api/artifacts/${artifact.id}/revoke`)
+        .set("Authorization", `Bearer ${tokenFor(other.idpSub as string)}`)
+        .expect(403);
+    });
+
+    it("saving a new policy on a revoked artifact clears the revoked flag", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      await request(app)
+        .post(`/api/artifacts/${artifact.id}/revoke`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      const res = await request(app)
+        .put(`/api/artifacts/${artifact.id}/policy`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ audienceType: "public_authenticated", expiry: "never" })
+        .expect(200);
+
+      expect(res.body.revoked).toBe(false);
     });
   });
 

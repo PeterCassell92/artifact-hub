@@ -17,6 +17,7 @@ const policy = (over: Partial<ArtifactPolicy> = {}): ArtifactPolicy => ({
   expiresAt: future,
   allowedUserIds: [],
   allowedGroupIds: [],
+  revoked: false,
   ...over,
 });
 
@@ -62,6 +63,16 @@ describe("canView", () => {
   it("denies a non-owner once expired", () => {
     const p = policy({ audienceType: "public_authenticated", expiresAt: past });
     expect(canView(activeViewer(), p, now)).toEqual({ allowed: false, reason: "expired" });
+  });
+
+  it("denies a non-owner once revoked, even with a valid audience/expiry", () => {
+    const p = policy({ audienceType: "public_authenticated", expiresAt: future, revoked: true });
+    expect(canView(activeViewer(), p, now)).toEqual({ allowed: false, reason: "revoked" });
+  });
+
+  it("still lets the owner in once revoked — they need access to re-open it", () => {
+    const owner = activeViewer({ id: "u-owner" });
+    expect(canView(owner, policy({ revoked: true }), now).allowed).toBe(true);
   });
 });
 

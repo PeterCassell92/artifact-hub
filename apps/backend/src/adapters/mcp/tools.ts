@@ -10,6 +10,7 @@ import {
   listOwnedArtifacts,
   listSharedWithMe,
   resolveAudienceInput,
+  revokeArtifactAccess,
   toPolicy,
   toSummary,
   updateArtifactPolicy,
@@ -32,6 +33,7 @@ import {
   ListGroupsInput,
   ListSharedWithMeInput,
   PublishArtifactInput,
+  RevokeAccessInput,
   SetAccessPolicyInput,
 } from "./schemas";
 import { classifyArtifactContent, toolError, toolJson } from "./toolHelpers";
@@ -107,6 +109,18 @@ Arguments: id (artifact uuid), audience ({ type: public_authenticated | specific
 Result is metadata-only: { ok, effectiveFrom }.
 
 Example: set_access_policy({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", audience: { type: "specific_users", userEmails: ["reviewer@example.com"] }, expiry: "7d" }).`;
+
+const REVOKE_ACCESS_DESCRIPTION = `Immediately cuts off everyone but you from an artifact you own, without changing its underlying audience/expiry settings. Use when the user wants access gone right now — "pull that down", "nobody should see this anymore" — not just narrowed for the future.
+
+Do NOT use this for routine narrowing (removing one person, shortening the expiry, switching audience) — use set_access_policy for that; it takes effect immediately too, just by changing the policy itself rather than layering an instant cutoff on top. Do NOT use this to permanently delete or unpublish an artifact — there is no delete in v1, and the prior policy is still there underneath, ready to resume. To let people back in afterward, call set_access_policy with a (possibly identical) audience/expiry — that automatically clears the revoked state as a side effect of setting a fresh policy.
+
+Owner-only — refuses for artifacts the caller doesn't own.
+
+Arguments: id (artifact uuid, must be owned by the caller).
+
+Result is metadata-only: { ok, revokedAt }.
+
+Example: revoke_access({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
 
 const GET_USER_DETAILS_DESCRIPTION = `Returns the calling user's own identity — email, display name, role, and the exact names of the groups they belong to. Use before publish_artifact or set_access_policy specifically when the user says something like "share with my team" and means one of THEIR OWN groups but hasn't given you the exact name.
 
@@ -329,7 +343,10 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       if (!resolved.ok) return toolError(resolved.error);
 
       const now = new Date();
-      const expiresAt = computeExpiresAt(args.expiry, now);
+      // Relative to publishedAt (createdAt), not this call — see the matching REST route comment
+      // in adapters/http/routes/artifacts.ts. Can land in the past; that's an allowed way to
+      // narrow into non-access (03 §4).
+      const expiresAt = computeExpiresAt(args.expiry, artifact.createdAt);
 
       await updateArtifactPolicy(artifact.id, {
         audienceType: resolved.audienceType,
@@ -356,6 +373,30 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       });
 
       return toolJson({ ok: true, effectiveFrom: now.toISOString() });
+    },
+  );
+
+  server.registerTool(
+    "revoke_access",
+    { title: "Revoke access", description: REVOKE_ACCESS_DESCRIPTION, inputSchema: RevokeAccessInput },
+    async (args) => {
+      const artifact = await findArtifactForDetail(args.id);
+      if (!artifact) return toolError("Artifact not found.");
+
+      if (!canManagePolicy(viewer, toPolicy(artifact))) {
+        return toolError("Only the owner can revoke this artifact's access.");
+      }
+
+      await revokeArtifactAccess(artifact.id, viewer.id);
+      await recordAdminAuditLog({
+        actorId: viewer.id,
+        action: "policy.revoke",
+        targetType: "artifact",
+        targetId: artifact.id,
+        metadata: {},
+      });
+
+      return toolJson({ ok: true, revokedAt: new Date().toISOString() });
     },
   );
 

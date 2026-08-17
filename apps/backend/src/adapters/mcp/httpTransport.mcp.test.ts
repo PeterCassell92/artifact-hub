@@ -138,6 +138,7 @@ describe("POST /mcp (HTTP black-box)", () => {
         "list_groups",
         "list_shared_with_me",
         "publish_artifact",
+        "revoke_access",
         "set_access_policy",
       ].sort(),
     );

@@ -68,6 +68,8 @@ export const CommentOnArtifactInput = CreateCommentInput.extend({ id: z.string()
 
 export const CreateShareLinkInput = z.object({ id: z.string().uuid() });
 
+export const RevokeAccessInput = z.object({ id: z.string().uuid() });
+
 export const SetAccessPolicyInput = z.object({
   id: z.string().uuid(),
   audience: McpAudienceInput,
