@@ -50,9 +50,11 @@ It is usable two ways over the same core logic:
    with an emailed magic link. We already run an email service, so we reuse it and avoid all
    password management.
 8. **Publishing is available from either an agent or the SPA.** Agents use `publish_artifact`
-   (MCP); humans use the Dashboard's "Publish New Artifact" button, which only collects a file —
-   title defaults to the filename, audience defaults to private (owner-only), expiry defaults to
-   never; the owner refines audience/expiry afterward via the existing access-policy editor.
+   (MCP); humans use the Dashboard's "Publish New Artifact" button — a two-step modal (pick a
+   file, then set its access policy) that reuses the same audience/expiry fields, including the
+   "Specific people" combo box of real users, as the artifact detail page's policy editor. Title
+   is always the file's name; there's no title-edit surface (artifact editing is out of scope
+   for v1, §8 below).
 9. **Every artifact access is audited.** View/download via the UI, a share link, or an MCP agent
    all write an `AccessEvent` (allowed and denied) — a full access trail across all three routes.
 
@@ -144,7 +146,7 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 26 | Repo layout | Monorepo (yarn workspaces), path-filtered CI | DECIDED | 08 |
 | 27 | HTML sandboxing | Serve off sandbox origin + strict CSP | DECIDED | 06 |
 | 28 | Authz model | Owner-based | DECIDED | 03 |
-| 29 | Publishing | Available via **both** MCP (`publish_artifact`) and the SPA ("Publish New Artifact", file-only modal; safe defaults, edited afterward via the policy editor) — reversed from the original MCP-only decision | DECIDED | 05, 06, frontend/ |
+| 29 | Publishing | Available via **both** MCP (`publish_artifact`) and the SPA ("Publish New Artifact", a two-step modal: pick a file, then set its access policy — title is always the filename) — reversed from the original MCP-only decision | DECIDED | 05, 06, frontend/ |
 | 30 | Access auditing | `AccessEvent` per view/download across ui/share_link/mcp | DECIDED | 04, models/ |
 | 31 | Frontend scope | Consume/manage, **plus publishing a file** (My Artifacts, Shared, filters/search, Publish New Artifact) | DECIDED | frontend/ |
 | 32 | Dev email | MailCatcher (Docker) in dev; Resend in prod | DECIDED | development/ |
@@ -208,7 +210,7 @@ Every requirement maps to at least one design doc **and** one BDD scenario. No o
 | Publishing is available via MCP and the SPA | 05, 06, frontend/ | publisher-publish-with-policy, publisher-publish-via-ui |
 | Frontend: My Artifacts / Shared With Me / filters & search | frontend/ | reviewer-access-via-ui |
 | Access audit trail (ui / share_link / mcp) | 04, models/access-event | reviewer-access-via-ui, reviewer-access-via-mcp |
-| Artifact relationships | 04, models/ | (storage + read API; no v1 UI journey) |
+| Artifact relationships | 04, 05, 06, models/ | (link via MCP; read-only panel in the SPA) |
 | Rich artifact metadata (drives filters) | 04, 05, 06, models/artifact | publisher-publish-with-policy |
 | Dev email catcher (MailCatcher) | development/email-catcher | (dev tooling) |
 | High concurrency | 07 | (non-functional; load-tested, see 09) |

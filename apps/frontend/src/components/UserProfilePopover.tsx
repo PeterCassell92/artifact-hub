@@ -42,7 +42,7 @@ export function UserProfilePopover({ user }: UserProfilePopoverProps) {
         aria-expanded={open}
         className="rounded-md px-1 py-1 font-medium text-neutral-700 hover:bg-neutral-100"
       >
-        {user.name ?? user.email}
+        {user.name}
       </button>
       {open && (
         <div

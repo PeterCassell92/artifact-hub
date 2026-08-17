@@ -24,7 +24,7 @@ magic-link sign-in and then redirected straight to that artifact's detail view.
 |-------|------|-----|
 | `/login` | Email → magic-link prompt | anyone (unauthenticated) |
 | `/` (Dashboard) | Overview: recent My Artifacts + recent Shared With Me + quick filters/search | member+ |
-| `/get-started` | Connect Claude Code / Claude Desktop to the MCP server (`/mcp` URL, CLI command, config snippet) — this, not the SPA, is how artifacts get published | member+ |
+| `/get-started` | Connect Claude Code / Claude Desktop to the MCP server (`/mcp` URL, CLI command, config snippet) — one of the two ways to publish, alongside the Dashboard's Publish New Artifact modal | member+ |
 | `/artifacts` | **My Artifacts** — everything I own | member+ |
 | `/shared` | **Shared With Me** — artifacts others shared to me/my groups | member+ |
 | `/artifacts/:id` | **Artifact detail** — view/download, comments, share, policy | member+ (per `canView`) |
@@ -33,14 +33,21 @@ magic-link sign-in and then redirected straight to that artifact's detail view.
 | `/admin/users` | Manage/invite users, promote/demote admins | admin |
 | `/admin/groups` | Manage groups | admin |
 
-**No `/publish` / upload route** — publishing is MCP-only (see README).
+**No dedicated `/publish` route** — publishing from the UI happens via a modal on the Dashboard
+(`/`), not a separate route; agents can still publish via MCP `publish_artifact` (see README).
 
 ## 3. Dashboard
 
-- Greets the user; surfaces **recently published (mine)** and **recently shared with me**.
+- Greets the user; surfaces the **3 most recent** My Artifacts and the **3 most recent** Shared
+  With Me, each with a "View all" link to the full `/artifacts` / `/shared` page.
+- A full-width **"Publish New Artifact"** button under My Artifacts opens a two-step modal: step 1
+  picks a file (a dashed drop-tile with a plus icon; clicking anywhere opens the native file
+  picker; once chosen, shows name/size/type), step 2 sets the access policy (same audience/expiry
+  fields as the artifact detail page's editor, including the "Specific people" combo box). Title
+  is always the file's name. On success the modal closes and the list refetches.
 - Prominent **search** box and the primary **filters** (see `02-filtering-and-search.md`).
-- Empty state for a brand-new member explains that artifacts are published via their agent
-  (Claude Desktop) using Artifact Hub's MCP tools — the UI is for viewing and managing.
+- Empty state for a brand-new member explains they can publish either by clicking "Publish New
+  Artifact" or by asking their agent (Claude Desktop) via Artifact Hub's MCP tools.
 
 ## 4. My Artifacts (`/artifacts`)
 
@@ -75,7 +82,10 @@ Gated by `canView`. Shows:
 - **Access policy panel** — shown to every viewer, not just the owner:
   - **Owner**: an editable **access policy editor** (audience + expiry buckets 24h/7d/30d/never,
     each computed relative to the artifact's **published date/time**, not to when it's edited —
-    an info tooltip on the Expiry control says so). Selecting a bucket shows the resulting expiry
+    an info tooltip on the Expiry control says so). The "Specific people" audience is a **combo
+    box of real users** (checked from `GET /api/users`), never free text — same for "Groups"
+    (`GET /api/groups`); at least one person/group must be selected before saving. Selecting a
+    bucket shows the resulting expiry
     date/time as inline info text below the field, live, before saving. If that computed date has
     already passed (relative to publish), inline warning text also appears, since saving would
     immediately deny everyone but the owner. A **"Revoke all access"** button (red, confirm dialog) sits
@@ -97,23 +107,25 @@ Admin-only (see `../architecture/02-auth-identity-and-admin.md` §7). `/admin/us
 `/admin/groups` render as **tabs of one shell** (`AdminPage`) rather than unrelated pages, so
 adding further admin sections later is a new tab, not a new nav entry:
 
-- **`/admin/users`** — list users (email, name, status, role, groups); **invite** (email + name +
-  role + group(s)) — the invitee's placeholder `users` row (status `invited`) appears in the list
-  immediately, before they accept; **promote a member to admin / demote**; corrective group
-  change; deactivate. An admin cannot demote or disable **their own** account (row shows "(you)"
-  instead of actions) — server-enforced, not just hidden client-side.
+- **`/admin/users`** — list users (email, name, status, role, groups); **invite** (email + name
+  (**required** — every user must have a display name) + role + group(s)) — the invitee's
+  placeholder `users` row (status `invited`) appears in the list immediately, before they accept;
+  **promote a member to admin / demote**; corrective group change; deactivate. An admin cannot
+  demote or disable **their own** account (row shows "(you)" instead of actions) — server-enforced,
+  not just hidden client-side.
 - **`/admin/groups`** — list/create groups (no rename/delete in v1 — see decision log in
   `../architecture/01-overview.md`).
 
 The **Admin nav entry** itself is not one of the left-hand navlinks — it renders as a light-blue
-pill in the header, to the left of the signed-in user's email, so it reads as a distinct
-"mode switch" rather than another page in the primary nav.
+pill in the header, to the left of the signed-in user's name (their profile button — clicking it
+opens a popover with email/groups/role), so it reads as a distinct "mode switch" rather than
+another page in the primary nav.
 
 ## 8. Cross-cutting UX
 
 - **Auth gating**: unauthenticated → `/login`; non-admins never see admin nav.
 - **Expiry/revocation** is honoured live — the server re-evaluates `canView` on each request, so a
   now-expired artifact shows an "access ended" state rather than stale content.
-- **Loading/empty/error** states everywhere; the "you have no artifacts yet — publish via your
-  agent" empty state reinforces the MCP-only publish model.
+- **Loading/empty/error** states everywhere; the "you have no artifacts yet" empty state now
+  offers both publish paths (the Publish New Artifact button, and agent instructions).
 - Components are unit-tested as `*.test.tsx` (see `../architecture/09-testing-strategy.md` §5).

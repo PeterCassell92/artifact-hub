@@ -13,7 +13,7 @@ there is no password anywhere. See
 | `id` | uuid | yes | User id (referenced as `ownerId`, `authorId`, etc.) | — |
 | `idpSub` | string | no | Auth0 subject; null until first magic-link sign-in | — |
 | `email` | string (unique) | yes | Login identity + invite target | search (admin) |
-| `name` | string | no | Display name (shown on comments, publisher column) | search (admin) |
+| `name` | string | **yes** | Display name (shown on comments, publisher column) — every user must have one; admin-provided at invite time (`CreateInvitationInput.name` is required); seeded/defensive-fallback rows derive a placeholder from the email local-part (`nameFromEmail`) | search (admin) |
 | `avatarUrl` | string | no | Optional avatar | — |
 | `role` | enum | yes | `member` \| `admin` (promote/demote by admin) | yes (admin) |
 | `status` | enum | yes | `invited` \| `active` \| `disabled` | yes (admin) |

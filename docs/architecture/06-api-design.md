@@ -82,12 +82,25 @@ can never grant more access than the redeemer's own `canView` check allows on re
 owner is the only one who can *change* the policy (`03` §1) — a viewer minting a link doesn't touch
 it.
 
+## 4a. Picker routes (any authenticated user, not admin-gated)
+
+| Method & path | Purpose | Authz |
+|---------------|---------|-------|
+| `GET /api/groups` | Every group (name/description) — feeds the "Groups" audience picker | authenticated |
+| `GET /api/users` | Every active user, trimmed (`id`/`email`/`name` only — no role/status/groupNames) — feeds the "Specific people" audience picker | authenticated |
+
+Both back `AccessPolicyFields`' combo boxes (AccessPolicyEditor and PublishArtifactModal's
+access-policy step) so an owner picks real emails/group names instead of typing free text — mirror
+the MCP `list_groups` tool's "every group regardless of caller's membership" semantics; `GET
+/api/users` is the equivalent for people. Distinct from their `/api/admin/*` counterparts, which
+require `role=admin` and return the fuller `UserView`/richer group-management surface.
+
 ## 5. Admin routes (role = `admin`)
 
 | Method & path | Purpose |
 |---------------|---------|
 | `GET /api/admin/users` | List users (status, role, groups) |
-| `POST /api/admin/invitations` | Invite `{ email, role, groupIds[] }` → creates invite + outbox Resend send |
+| `POST /api/admin/invitations` | Invite `{ email, name, role, groupIds[] }` — `name` is **required**, every user must have a display name → creates invite + outbox Resend send |
 | `POST /api/admin/users/:id/groups` | Corrective group change (audit-logged) |
 | `POST /api/admin/users/:id/role` | Change role |
 | `POST /api/admin/users/:id/disable` | Deactivate a user |

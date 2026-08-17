@@ -1,5 +1,5 @@
 import { format, formatDistanceToNow } from "date-fns";
-import type { ArtifactSummary, AudienceType, ExpiryOption } from "contracts";
+import type { ArtifactRelationshipSummary, ArtifactSummary, AudienceType, ExpiryOption } from "contracts";
 
 export function formatPublishedAt(iso: string): string {
   return format(new Date(iso), "MMM d, yyyy");
@@ -68,6 +68,21 @@ export function audienceLabel(audienceType: ArtifactSummary["audienceType"]): st
     case "user_groups":
       return "Groups";
   }
+}
+
+/** `type` is stored as `from -> to`; a viewer on the `incoming` side reads the inverse relation
+ * (e.g. "X supersedes this" reads as "Superseded by X", not "Supersedes X"). `related_to` is
+ * symmetric, so both directions read the same. */
+const RELATIONSHIP_LABELS: Record<ArtifactRelationshipSummary["type"], { outgoing: string; incoming: string }> = {
+  supersedes: { outgoing: "Supersedes", incoming: "Superseded by" },
+  derived_from: { outgoing: "Derived from", incoming: "Source for" },
+  related_to: { outgoing: "Related to", incoming: "Related to" },
+};
+
+export function relationshipLabel(
+  relationship: Pick<ArtifactRelationshipSummary, "type" | "direction">,
+): string {
+  return RELATIONSHIP_LABELS[relationship.type][relationship.direction];
 }
 
 export function kindLabel(kind: ArtifactSummary["kind"]): string {

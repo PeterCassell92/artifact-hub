@@ -142,6 +142,39 @@ describe("Agents can publish a new artifact without ever sending its bytes throu
     expect(Number(stored!.sizeBytes)).toBe(Buffer.byteLength("the actual bytes"));
   });
 
+  it("links relationships to already-existing artifacts at publish time, reporting per-entry outcomes", async () => {
+    const { client, user } = await ctx.connectAsUser(`owner-${randomUUID()}@test.local`);
+    const source = await ctx.makeArtifact({ ownerId: user.id, title: "Source diagram" });
+
+    const result = await client.callTool({
+      name: "publish_artifact",
+      arguments: {
+        title: "Compiled output",
+        fileName: "out.pdf",
+        contentType: "application/pdf",
+        audience: { type: "public_authenticated" },
+        expiry: "never",
+        relationships: [
+          { toId: source.id, type: "derived_from", note: "compiled export" },
+          { toId: randomUUID(), type: "related_to" }, // unknown id — reported, doesn't fail the publish
+        ],
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const payload = textPayload(result) as {
+      artifactId: string;
+      relationshipResults: Array<{ ok: boolean; reason?: string }>;
+    };
+    expect(payload.relationshipResults).toHaveLength(2);
+    expect(payload.relationshipResults[0]).toMatchObject({ ok: true });
+    expect(payload.relationshipResults[1]).toMatchObject({ ok: false, reason: "to_not_found" });
+
+    const stored = await ctx.prisma.artifactRelationship.findMany({ where: { fromId: payload.artifactId } });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ toId: source.id, type: "derived_from", note: "compiled export" });
+  });
+
   it("can publish to a group the publisher does NOT belong to — group membership isn't required to target a group", async () => {
     const groupName = `design-team-${randomUUID()}`;
     const group = await ctx.prisma.group.create({ data: { name: groupName } });

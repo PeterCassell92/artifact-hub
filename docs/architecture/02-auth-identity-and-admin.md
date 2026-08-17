@@ -194,7 +194,7 @@ admin invitation. Flow:
 
 ```
 Admin (in /admin/users)
-   │  POST /api/admin/invitations { email, name?, role, groupIds[] }
+   │  POST /api/admin/invitations { email, name, role, groupIds[] }  — name is REQUIRED (every user needs one)
    ▼
 Backend (one transaction):
    • create `invitations` row — token = random; store token_hash only; expires_at (e.g. +7d);
@@ -245,7 +245,9 @@ in-app.
   (dev: `.env`).
 - On first deploy, an **idempotent `prisma db seed`** step:
   1. Seeds the initial groups (e.g. `Product`, `Development`).
-  2. Creates **one admin `users` row per listed email** (`role=admin`, `status=invited`).
+  2. Creates **one admin `users` row per listed email** (`role=admin`, `status=invited`,
+     `name` derived from the email local-part via `nameFromEmail` — seeded admins have no
+     admin-provided name yet, and every user requires one).
   3. Fires the same **Resend invitation** to each, so each seed admin signs in via magic link
      exactly like any other user (no password).
 - **Idempotent**: re-running the seed skips emails/groups that already exist, so the step is

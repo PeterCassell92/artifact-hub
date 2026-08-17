@@ -4,12 +4,15 @@ What a user experiences on the web app: how they sign in, land, and manage/view/
 artifacts. Companion to the API (`../architecture/06-api-design.md`), the models
 (`../models/`), and auth (`../architecture/02-auth-identity-and-admin.md`).
 
-## The one rule that shapes the whole frontend
+## Publishing
 
-**The frontend is for consuming and managing artifacts, not creating them. Publishing is
-exclusively an MCP agent function** — there is no "upload/publish" screen in the SPA. A user
-publishes by asking their agent (e.g. Claude Desktop) via the MCP `publish_artifact` tool; the
-artifact then appears in the SPA under **My Artifacts**.
+**Publishing is available both from an agent and from the SPA.** A user can ask their agent (e.g.
+Claude Desktop) to publish via the MCP `publish_artifact` tool, or click **"Publish New
+Artifact"** on the Dashboard — a two-step modal: pick a file, then set its access policy (audience
++ expiry, same fields as the artifact detail page's policy editor — the "Specific people" audience
+is a combo box of real users, never free text). Title is always the file's name; there's no
+title-edit surface (artifact editing is out of scope for v1, `../architecture/01-overview.md` §8).
+Either path lands the artifact in **My Artifacts**.
 
 ## Stack & patterns
 
@@ -30,6 +33,6 @@ live in [`../development/frontend-patterns.md`](../development/frontend-patterns
 
 - **Member** — sign in, browse **My Artifacts** and **Shared With Me**, open artifact detail
   (view/download, read/add comments), create/revoke share links, change their own artifacts'
-  access policy. **Cannot publish from the UI.**
+  access policy. **Can publish a file directly from the Dashboard, or via their agent.**
 - **Admin** — everything a member can do, plus the **admin area** (`/admin`): invite users,
   promote/demote admins, manage groups. See `../architecture/02-auth-identity-and-admin.md`.

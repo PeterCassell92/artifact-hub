@@ -6,6 +6,9 @@ import {
   ArtifactFacetOptions,
   ArtifactListQuery,
   ArtifactListResponse,
+  ArtifactRelationshipCreateResponse,
+  ArtifactRelationshipInput,
+  ArtifactRelationshipSummary,
   CommentView,
   CreateArtifactInput,
   CreateArtifactResponse,
@@ -34,6 +37,7 @@ import {
 import { buildAccessRevokedOutboxEvents, buildNewAccessOutboxEvents } from "../../../database-service/artifactRecipients";
 import { createComment, listComments } from "../../../database-service/comments";
 import { recordAdminAuditLog } from "../../../database-service/adminAuditLog";
+import { createRelationship, listRelationships } from "../../../database-service/relationships";
 import { createShareLink } from "../../../database-service/shareLinks";
 import { getPresignedDownloadUrl } from "../../../storage/s3";
 import { getEnv } from "../../../env";
@@ -452,6 +456,89 @@ export function createArtifactsRouter(): Router {
     }
 
     res.redirect(302, url);
+  });
+
+  // GET /api/artifacts/:id/relationships — every relationship touching this artifact, either
+  // direction. canView-gated like comments; each row's other side is independently redacted by
+  // listRelationships when the caller can't see it, so this never leaks a private artifact.
+  router.get("/:id/relationships", async (req, res) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact id");
+      return;
+    }
+
+    const artifact = await findArtifactForDetail(params.data.id);
+    if (!artifact) {
+      sendError(res, 404, "not_found", "Artifact not found");
+      return;
+    }
+
+    const viewer = req.viewer!;
+    const decision = canView(viewer, toPolicy(artifact), new Date());
+    if (!decision.allowed) {
+      sendError(res, 403, "forbidden", "You do not have access to this artifact", {
+        reason: decision.reason,
+      });
+      return;
+    }
+
+    const relationships = await listRelationships(viewer, artifact.id);
+    res.json(z.array(ArtifactRelationshipSummary).parse(relationships));
+  });
+
+  // POST /api/artifacts/:id/relationships — owner-only (canManagePolicy), same as policy
+  // mutations. The target side's existence/visibility is validated inside createRelationship,
+  // not here — see 03: canView is the one authorization gate, never re-implemented per route.
+  router.post("/:id/relationships", async (req, res) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact id");
+      return;
+    }
+
+    const body = ArtifactRelationshipInput.safeParse(req.body);
+    if (!body.success) {
+      sendError(res, 400, "bad_request", "Invalid relationship input", body.error.flatten());
+      return;
+    }
+
+    const artifact = await findArtifactForDetail(params.data.id);
+    if (!artifact) {
+      sendError(res, 404, "not_found", "Artifact not found");
+      return;
+    }
+
+    const viewer = req.viewer!;
+    if (!canManagePolicy(viewer, toPolicy(artifact))) {
+      sendError(res, 403, "forbidden", "Only the owner can link this artifact to another");
+      return;
+    }
+
+    const result = await createRelationship(artifact.id, viewer, body.data);
+    if (!result.ok) {
+      switch (result.reason) {
+        case "self_link":
+          sendError(res, 400, "bad_request", "An artifact cannot be related to itself");
+          return;
+        case "to_not_found":
+          sendError(res, 404, "not_found", "Target artifact not found");
+          return;
+        case "to_not_viewable":
+          sendError(res, 403, "forbidden", "You do not have access to the target artifact");
+          return;
+        case "duplicate":
+          sendError(res, 409, "conflict", "This relationship already exists");
+          return;
+      }
+    }
+
+    res.status(201).json(
+      ArtifactRelationshipCreateResponse.parse({
+        relationshipId: result.relationshipId,
+        createdAt: result.createdAt.toISOString(),
+      }),
+    );
   });
 
   return router;

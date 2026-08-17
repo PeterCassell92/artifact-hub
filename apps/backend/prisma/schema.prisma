@@ -84,13 +84,14 @@ model User {
   status    UserStatus @default(invited)
   createdAt DateTime   @default(now())
 
-  memberships  GroupMembership[]
-  artifacts    Artifact[]            @relation("owner")
-  comments     Comment[]
-  allowedFor   ArtifactAllowedUser[]
-  shareLinks   ShareLink[]
-  invitesSent  Invitation[]          @relation("invitedBy")
-  accessEvents AccessEvent[]
+  memberships          GroupMembership[]
+  artifacts            Artifact[]             @relation("owner")
+  comments             Comment[]
+  allowedFor           ArtifactAllowedUser[]
+  shareLinks           ShareLink[]
+  invitesSent          Invitation[]           @relation("invitedBy")
+  accessEvents         AccessEvent[]
+  createdRelationships ArtifactRelationship[]
 }
 
 model Group {
@@ -258,17 +259,19 @@ model ShareLink {
   accessEvents AccessEvent[]
 }
 
-// Forward-looking: enables future UI/agent navigation between related artifacts.
+// Enables UI/agent navigation between related artifacts (e.g. "this is a compiled version of …").
 model ArtifactRelationship {
   id          String       @id @default(uuid())
   fromId      String
   toId        String
   type        RelationType
+  note        String? // short free-text label, e.g. "post-processed export"
   createdById String
   createdAt   DateTime     @default(now())
 
-  from Artifact @relation("from", fields: [fromId], references: [id])
-  to   Artifact @relation("to", fields: [toId], references: [id])
+  from      Artifact @relation("from", fields: [fromId], references: [id])
+  to        Artifact @relation("to", fields: [toId], references: [id])
+  createdBy User     @relation(fields: [createdById], references: [id])
 
   @@unique([fromId, toId, type])
 }

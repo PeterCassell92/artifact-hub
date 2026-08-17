@@ -88,3 +88,23 @@ export function commentsTable(items: CommentRow[]): string {
   );
   return ["| date | author | comment |", "|---|---|---|", ...rows].join("\n");
 }
+
+interface RelationshipRow {
+  type: string;
+  direction: "outgoing" | "incoming";
+  otherArtifact: { id: string; title: string } | null;
+  note: string | null;
+  createdAt: string;
+}
+
+/** `list_artifact_relationships` table — newest first, matching `listRelationships()`'s ordering.
+ * A row whose `otherArtifact` is null means the caller can't view the far side of that
+ * relationship — shown as "(restricted)" rather than dropped, since the link itself still exists. */
+export function relationshipsTable(items: RelationshipRow[]): string {
+  const rows = items.map((r) => {
+    const arrow = r.direction === "outgoing" ? "→" : "←";
+    const other = r.otherArtifact ? `${r.otherArtifact.title} (${r.otherArtifact.id})` : "(restricted)";
+    return `| ${r.type} | ${arrow} | ${other} | ${r.note ?? ""} | ${r.createdAt.slice(0, 10)} |`;
+  });
+  return ["| type | direction | other artifact | note | createdAt |", "|---|---|---|---|---|", ...rows].join("\n");
+}

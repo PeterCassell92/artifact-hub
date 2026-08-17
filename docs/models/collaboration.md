@@ -33,7 +33,7 @@ A share link carries **no access policy**. Redemption re-runs `canView` against 
 current policy (arch/03 §5), and each redemption writes an `AccessEvent` with `route=share_link`
 and this `shareLinkId` (see `access-event.md`).
 
-## ArtifactRelationship (forward-looking)
+## ArtifactRelationship
 
 | Field | Type | Req | Meaning |
 |-------|------|:---:|---------|
@@ -41,8 +41,16 @@ and this `shareLinkId` (see `access-event.md`).
 | `fromId` | uuid → Artifact | yes | Source artifact |
 | `toId` | uuid → Artifact | yes | Target artifact |
 | `type` | enum | yes | `supersedes` \| `derived_from` \| `related_to` |
+| `note` | text | no | Short free-text label (≤280 chars), e.g. "post-processed export" |
 | `createdById` | uuid → User | yes | Who linked them |
 | `createdAt` | timestamp | yes | — |
 
-Unique on `(fromId, toId, type)`. Additive in v1 (storage + read API); enables future UI/agent
-navigation between related artifacts (e.g. "this is an updated version of …").
+Unique on `(fromId, toId, type)`. Written via the MCP `publish_artifact` tool's optional
+`relationships` argument (at publish time) or the `link_artifacts` tool / `POST
+/api/artifacts/:id/relationships` (post-hoc) — owner-only for `fromId`; `toId` only needs to be
+`canView`-able by the linker, not owned by them. Read via `list_artifact_relationships` (MCP) or
+`GET /api/artifacts/:id/relationships` — each row's `otherArtifact` is independently redacted to
+`null` if the caller can't view that side, so a relationship visible on one artifact never leaks
+the title/owner of a private artifact on its far end. The SPA renders relationships read-only (no
+authoring UI — matches "publishing is MCP-only", CLAUDE.md); enables agent navigation and
+inference between related artifacts (e.g. "this is an updated version of …").

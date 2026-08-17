@@ -27,7 +27,7 @@ flow, all frontend views + Auth0 wiring, and most tests.
 - Route/MCP handlers call `core` authz (`canView`/`canComment`/`canManagePolicy`) — never re-implement checks.
 - Read `role`/groups from the **DB**, never from token claims.
 - Keep request/response types in `packages/contracts`; **rebuild it** (`yarn workspace contracts build`) after edits — apps consume its `dist`.
-- No anonymous access; publishing is **MCP-only**; files never return as MCP tool results (Resources only); every access writes an `AccessEvent`.
+- No anonymous access; publishing is available via **both MCP and the SPA**; files never return as MCP tool results (Resources only); every access writes an `AccessEvent`.
 - Frontend: no `window.alert/confirm/prompt`, no toasts — state-driven in-DOM notifications + `role="dialog"` modals only.
 - Migrations are **expand/contract**, never edit an applied one (skill: `prisma-migrate`).
 
@@ -135,11 +135,12 @@ flow, all frontend views + Auth0 wiring, and most tests.
 
 ## Phase 6 — Frontend ([`../frontend/`](../frontend/), skills: `frontend-patterns`, `frontend-component-testing`)
 
-**Goal:** the consuming/managing SPA (no publish UI).
+**Goal:** the consuming/managing/publishing SPA.
 
 - **Auth0 wiring**: add `@auth0/auth0-react`; `Auth0Provider` from `VITE_AUTH0_*`; Authorization Code + PKCE; attach access token (API audience) to API calls; guard admin routes.
 - **API client** + Redux Toolkit slices/queries typed against `packages/contracts`.
-- **Views**: Dashboard, My Artifacts, Shared With Me (incl. `sinceHours=24`), Artifact detail (viewer + download gated on `canView`, comments), policy/revoke form, Admin users/groups. **No publish/upload screen.**
+- **Views**: Dashboard, My Artifacts, Shared With Me (incl. `sinceHours=24`), Artifact detail (viewer + download gated on `canView`, comments), policy/revoke form, **Publish New Artifact modal** (Dashboard), Admin users/groups.
+- *(Retroactive note: publishing from the SPA — `POST /api/artifacts` + `.../finalize`, a two-step file→policy modal — was added after this phase's original build, reversing the initial "no publish UI" decision; see `01-overview.md` decision #29.)*
 - All feedback via the notifications slice + `NotificationRegion` / in-DOM modals.
 
 **Tests:** React Testing Library component tests (`*.test.tsx`) per `09` §5 — accessible queries, Redux `<Provider>` + router, assert in-DOM notifications; mock the API layer.

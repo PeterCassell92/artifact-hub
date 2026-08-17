@@ -19,18 +19,21 @@ import {
 import { buildAccessRevokedOutboxEvents, buildNewAccessOutboxEvents } from "../../database-service/artifactRecipients";
 import { createComment, listComments } from "../../database-service/comments";
 import { recordAdminAuditLog } from "../../database-service/adminAuditLog";
+import { createRelationship, createRelationships, listRelationships } from "../../database-service/relationships";
 import { createShareLink } from "../../database-service/shareLinks";
 import { findUserWithGroupsById, toUserView } from "../../database-service/adminUsers";
 import { listGroups, toGroupView } from "../../database-service/groups";
 import { getObjectBuffer } from "../../storage/s3";
 import { getEnv } from "../../env";
-import { commentsTable, groupsTable, ownedArtifactsTable, sharedWithMeTable } from "./format";
+import { commentsTable, groupsTable, ownedArtifactsTable, relationshipsTable, sharedWithMeTable } from "./format";
 import {
   CommentOnArtifactInput,
   CreateShareLinkInput,
   GetArtifactInput,
   GetUserDetailsInput,
   isValidPublishArtifactInput,
+  LinkArtifactsInput,
+  ListArtifactRelationshipsInput,
   ListArtifactsInput,
   ListCommentsInput,
   ListGroupsInput,
@@ -41,7 +44,7 @@ import {
 } from "./schemas";
 import { classifyArtifactContent, toolError, toolJson } from "./toolHelpers";
 
-const PUBLISH_ARTIFACT_DESCRIPTION = `Publishes a new artifact from the calling agent's own work (a generated diagram, report, document, etc.) and sets who can see it. Use when the user asks to publish, share, or upload something the agent just produced. This is the ONLY way artifacts get created — there is no upload screen in the web app.
+const PUBLISH_ARTIFACT_DESCRIPTION = `Publishes a new artifact from the calling agent's own work (a generated diagram, report, document, etc.) and sets who can see it. Use when the user asks to publish, share, or upload something the agent just produced. This is one of two ways artifacts get created — the other is the "Publish New Artifact" button in the web app's Dashboard, a file-only modal whose access-policy step still requires the owner to pick a real audience there too. Use this tool when the agent itself should do the publishing, e.g. with rich metadata (title, kind, tags, sourceTool, format, language) the UI path can't set — the UI always names the artifact after the file and only offers audience/expiry, no other metadata fields.
 
 Do NOT use this to change an existing artifact's audience or expiry — use set_access_policy for that. publish_artifact never edits an artifact that already exists (no edit/delete in v1).
 
@@ -49,9 +52,11 @@ Two calls, one tool — file bytes never pass through this tool call. Call it WI
 
 audience.type is one of public_authenticated (any signed-in user) | specific_users (requires audience.userEmails) | user_groups (requires audience.groupNames). expiry is one of 24h | 7d | 30d | never. groupNames must match a group's exact name — the caller does NOT need to belong to a group to publish to it. If you don't already have the exact name, call list_groups to see every group in the organization (or get_user_details for just the caller's own groups) rather than guessing.
 
-Result is metadata-only JSON, never file bytes: on the start call, { artifactId, resourceUri, uploadUrl, bytesRef }; on the finish call, { artifactId, resourceUri }. Once published, read the file back via the artifact://<id> resource, never from this tool.
+Optionally, on the start call, pass relationships — an array of { toId, type, note? } — to link this new artifact to ones that already exist: type is one of supersedes (this replaces an older version) | derived_from (this is a compiled/rendered/post-processed output of the source at toId) | related_to (anything else worth navigating between). toId must be an artifact you can currently view — use list_artifacts/list_shared_with_me to find it first, don't guess an id. Omit relationships entirely if there's no clear connection. This is optional enrichment, not required for a successful publish: a bad toId is reported back per-entry, it never fails the publish itself. Use link_artifacts instead when the relationship only becomes clear after both artifacts already exist.
 
-Example (start): publish_artifact({ title: "Q3 architecture diagram", fileName: "q3-arch.mmd", contentType: "text/x-mermaid", audience: { type: "user_groups", groupNames: ["engineering"] }, expiry: "30d" }). Example (finish): publish_artifact({ bytesRef: "<artifactId from the start call>" }).`;
+Result is metadata-only JSON, never file bytes: on the start call, { artifactId, resourceUri, uploadUrl, bytesRef, relationshipResults? }; on the finish call, { artifactId, resourceUri }. Once published, read the file back via the artifact://<id> resource, never from this tool.
+
+Example (start): publish_artifact({ title: "Q3 architecture diagram", fileName: "q3-arch.mmd", contentType: "text/x-mermaid", audience: { type: "user_groups", groupNames: ["engineering"] }, expiry: "30d", relationships: [{ toId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "derived_from", note: "rendered PNG of this diagram" }] }). Example (finish): publish_artifact({ bytesRef: "<artifactId from the start call>" }).`;
 
 const LIST_ARTIFACTS_DESCRIPTION = `Lists the artifacts the calling user has published — "My Artifacts". Use when the user asks what they've published, uploaded, or shared, or wants to manage/revoke their own artifacts.
 
@@ -104,6 +109,30 @@ Arguments: id (artifact uuid).
 Result is metadata-only: { comments: [{ id, authorName, body, createdAt }] }, plus a markdown table.
 
 Example: list_comments({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
+
+const LINK_ARTIFACTS_DESCRIPTION = `Links two existing artifacts you own the first of, recording that one is a version/derivative/general relative of the other. Use when the user says something like "this supersedes the old report" or "this is the compiled version of the diagram I published earlier" AFTER both artifacts already exist. For linking at the moment of publishing a brand-new artifact, pass relationships directly to publish_artifact instead — that's the same effect in one fewer call.
+
+Do NOT use this to change access, comment, or otherwise modify an artifact — it only records a typed edge between two ids; it cannot be undone or edited over MCP (no relationship-delete in v1). Do NOT use it to link to an artifact you can't currently view — it will be refused, not silently skipped.
+
+Owner-only for fromId — refuses if the caller doesn't own it. toId does NOT need to be owned by the caller, only viewable (linking your artifact to someone else's, that you can see, is a supported journey — e.g. "my report is derived_from their dataset").
+
+Arguments: fromId (the artifact you own), toId (the artifact it relates to — must be one the caller can currently view), type (supersedes | derived_from | related_to), note (optional, up to 280 characters, e.g. "rendered PNG export").
+
+Result is metadata-only: { relationshipId, createdAt }.
+
+Example: link_artifacts({ fromId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", toId: "9c858901-8a57-4791-81fe-4c455b099bc9", type: "supersedes" }).`;
+
+const LIST_ARTIFACT_RELATIONSHIPS_DESCRIPTION = `Reads back every relationship touching an artifact, in either direction — what it supersedes/was derived from/is related to, and what supersedes/derives from/relates to it. Use when the user asks "what's this connected to", "is there an older version of this", or before inferring anything about an artifact's lineage.
+
+Do NOT use this to CREATE a relationship — use link_artifacts (or publish_artifact's relationships argument) for that; this tool is read-only.
+
+Requires the same access as viewing the artifact (reading its relationships = viewing) — if the caller can't view the artifact, they can't read its relationships either. Note: the OTHER artifact named in a relationship may still be restricted even when the relationship itself is visible — such rows come back with otherArtifact: null (the link's existence and type are shown; the other artifact's title/owner are not).
+
+Arguments: id (artifact uuid).
+
+Result is metadata-only: { relationships: [{ id, type, direction, note, otherArtifact: {id, title, kind, ownerId} | null, createdByName, createdAt }] }, plus a markdown table.
+
+Example: list_artifact_relationships({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
 
 const CREATE_SHARE_LINK_DESCRIPTION = `Mints a shareable locator link (/s/<token>) for an artifact the caller can view — owner or not. Use when the user asks for a link to send someone.
 
@@ -232,9 +261,24 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
         expiresAt: computeExpiresAt(args.expiry!, new Date()),
       });
 
+      // Optional enrichment, not a publish precondition — a bad toId is reported per-entry
+      // below, never fails the artifact that was just successfully created (docs/architecture/05).
+      const relationshipResults = args.relationships?.length
+        ? await createRelationships(artifact.id, viewer, args.relationships)
+        : [];
+      const relationshipNote = relationshipResults.length
+        ? ` Linked ${relationshipResults.filter((r) => r.ok).length}/${relationshipResults.length} relationship(s)${relationshipResults.some((r) => !r.ok) ? " — see relationshipResults for any skipped" : ""}.`
+        : "";
+
       return toolJson(
-        { artifactId: artifact.id, resourceUri: `artifact://${artifact.id}`, uploadUrl, bytesRef: artifact.id },
-        `Created pending artifact ${artifact.id}. PUT the file to uploadUrl, then call publish_artifact again with bytesRef="${artifact.id}" to finish.`,
+        {
+          artifactId: artifact.id,
+          resourceUri: `artifact://${artifact.id}`,
+          uploadUrl,
+          bytesRef: artifact.id,
+          ...(relationshipResults.length ? { relationshipResults } : {}),
+        },
+        `Created pending artifact ${artifact.id}.${relationshipNote} PUT the file to uploadUrl, then call publish_artifact again with bytesRef="${artifact.id}" to finish.`,
       );
     }),
   );
@@ -342,6 +386,57 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
 
       const comments = await listComments(artifact.id);
       return toolJson({ comments }, commentsTable(comments));
+    }),
+  );
+
+  server.registerTool(
+    "link_artifacts",
+    { title: "Link artifacts", description: LINK_ARTIFACTS_DESCRIPTION, inputSchema: LinkArtifactsInput },
+    wrap("link_artifacts", async (args) => {
+      const from = await findArtifactForDetail(args.fromId);
+      if (!from) return toolError("fromId artifact not found.");
+      if (!canManagePolicy(viewer, toPolicy(from))) {
+        return toolError("You do not own the fromId artifact.");
+      }
+
+      const result = await createRelationship(args.fromId, viewer, {
+        toId: args.toId,
+        type: args.type,
+        note: args.note,
+      });
+      if (!result.ok) {
+        switch (result.reason) {
+          case "self_link":
+            return toolError("An artifact cannot be related to itself.");
+          case "to_not_found":
+            return toolError("toId artifact not found.");
+          case "to_not_viewable":
+            return toolError("You do not have access to the toId artifact.");
+          case "duplicate":
+            return toolError("This relationship already exists.");
+        }
+      }
+
+      return toolJson({ relationshipId: result.relationshipId, createdAt: result.createdAt });
+    }),
+  );
+
+  server.registerTool(
+    "list_artifact_relationships",
+    {
+      title: "List artifact relationships",
+      description: LIST_ARTIFACT_RELATIONSHIPS_DESCRIPTION,
+      inputSchema: ListArtifactRelationshipsInput,
+    },
+    wrap("list_artifact_relationships", async (args) => {
+      const artifact = await findArtifactForDetail(args.id);
+      if (!artifact) return toolError("Artifact not found.");
+
+      const decision = canView(viewer, toPolicy(artifact), new Date());
+      if (!decision.allowed) return toolError(`Access denied (${decision.reason}).`);
+
+      const relationships = await listRelationships(viewer, artifact.id);
+      return toolJson({ relationships }, relationshipsTable(relationships));
     }),
   );
 

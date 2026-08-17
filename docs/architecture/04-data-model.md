@@ -57,7 +57,7 @@ model User {
   id            String   @id @default(uuid())
   idpSub        String?  @unique            // Auth0 subject; null until first login
   email         String   @unique
-  name          String?
+  name          String                        // required — every user needs a display name
   avatarUrl     String?
   role          Role     @default(member)
   status        UserStatus @default(invited)
@@ -204,15 +204,17 @@ model ShareLink {
   createdBy   User     @relation(fields: [createdById], references: [id])
 }
 
-model ArtifactRelationship {                  // forward-looking (see 01 #23)
+model ArtifactRelationship {                  // enables UI/agent navigation (see 01 #23)
   id          String       @id @default(uuid())
   fromId      String
   toId        String
   type        RelationType
+  note        String?                         // short free-text label, e.g. "post-processed export"
   createdById String
   createdAt   DateTime     @default(now())
   from        Artifact     @relation("from", fields: [fromId], references: [id])
   to          Artifact     @relation("to",   fields: [toId],   references: [id])
+  createdBy   User         @relation(fields: [createdById], references: [id])
   @@unique([fromId, toId, type])
 }
 
@@ -274,11 +276,21 @@ model AccessEvent {                            // artifact ACCESS audit trail (s
 - **Rich artifact metadata.** Beyond `metadata` JSONB (free-form), we store faceted columns
   (`kind`, `sourceTool`, `format`, `language`, …) plus `Tag`/`ArtifactTag`, because these drive
   the frontend filters/search. Full catalogue: [`../models/artifact.md`](../models/artifact.md).
+- **`User.name` is required (NOT NULL), not optional.** Originally nullable; the `require_user_name`
+  migration backfills any existing NULLs (derived from the email local-part, e.g.
+  "peter.cassell@x.com" → "Peter Cassell") before adding the constraint — safe on real data, not
+  just a throwaway dev DB. `CreateInvitationInput.name` is correspondingly required, and the SPA's
+  invite form validates it before submit. The rare code path with no admin-provided name to fall
+  back to (`acceptInvitation`'s defensive upsert-create branch) uses the same email-derived
+  placeholder via `nameFromEmail` (`database-service/adminUsers.ts`).
 - **Two audit trails, separate on purpose.** `AccessEvent` = artifact *access* (view/download via
   `ui` / `share_link` / `mcp`, allowed **and** denied); `AdminAuditLog` = administrative actions
   (invite, **role.change** promote/demote, group change, **policy.update** revocation). Rationale
   in [`../models/system.md`](../models/system.md) and [`../models/access-event.md`](../models/access-event.md).
-- **Relationships** are additive and unused by v1 UI beyond storage + a read endpoint.
+- **Relationships** are written via `publish_artifact`'s optional `relationships` argument or the
+  `link_artifacts` MCP tool / `POST .../relationships` (owner-only; target must be `canView`-able
+  by the linker). The SPA renders them read-only (a "Related Artifacts" panel) — there is still no
+  relationship-authoring UI, matching "publishing is MCP-only" (CLAUDE.md).
 - **Immutable group membership** is enforced in the service layer (no self-service mutation
   route) rather than a DB trigger; admin corrective edits are audit-logged.
 - **Passwordless**: `User` has no password field — auth is magic link (see `02`).

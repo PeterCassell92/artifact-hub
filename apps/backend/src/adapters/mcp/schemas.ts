@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ArtifactKind, AudienceType, CreateCommentInput, ExpiryOption } from "contracts";
+import { ArtifactKind, ArtifactRelationshipInput, AudienceType, CreateCommentInput, ExpiryOption } from "contracts";
 
 /** Nested `{ type, userEmails?, groupNames? }` shape named in docs/architecture/05 §4 — used by
  * both `publish_artifact` and `set_access_policy` (the two tools that set an artifact's audience). */
@@ -39,6 +39,9 @@ export const PublishArtifactInput = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
   audience: McpAudienceInput.optional(),
   expiry: ExpiryOption.optional(),
+  /** Optional links to already-existing artifacts, created right after this one — see
+   * link_artifacts for the post-hoc equivalent. Only honoured on the start call. */
+  relationships: z.array(ArtifactRelationshipInput).optional(),
   bytesRef: z.string().uuid().optional(),
   checksumSha256: z
     .string()
@@ -77,6 +80,10 @@ export const SetAccessPolicyInput = z.object({
   audience: McpAudienceInput,
   expiry: ExpiryOption,
 });
+
+export const LinkArtifactsInput = ArtifactRelationshipInput.extend({ fromId: z.string().uuid() });
+
+export const ListArtifactRelationshipsInput = z.object({ id: z.string().uuid() });
 
 export const SummariseArtifactReviewsArgs = z.object({ artifactId: z.string() });
 

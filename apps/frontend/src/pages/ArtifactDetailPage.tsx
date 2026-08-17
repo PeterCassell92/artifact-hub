@@ -5,6 +5,7 @@ import { CommentForm } from "../components/CommentForm";
 import { CommentList } from "../components/CommentList";
 import { AccessPolicyEditor } from "../components/AccessPolicyEditor";
 import { AccessPolicySummary } from "../components/AccessPolicySummary";
+import { RelatedArtifacts } from "../components/RelatedArtifacts";
 import { ShareLinkPanel } from "../components/ShareLinkPanel";
 import { fileTypeLabel, formatBytes, formatPublishedAtWithTime } from "../lib/formatters";
 
@@ -86,6 +87,13 @@ export function ArtifactDetailPage() {
           <AccessPolicySummary artifact={artifact} />
         )}
         <ShareLinkPanel artifactId={artifact.id} />
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-neutral-700">Related Artifacts</h2>
+        <div className="mt-3">
+          <RelatedArtifacts artifactId={artifact.id} />
+        </div>
       </div>
 
       <div>

@@ -42,7 +42,7 @@ describe("AppLayout", () => {
     expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
   });
 
-  it("renders the Admin link outside the main navlinks, styled as a light-blue pill, left of the email", () => {
+  it("renders the Admin link outside the main navlinks, styled as a light-blue pill, left of the profile button", () => {
     useGetMeQuery.mockReturnValue({
       data: { id: "u1", email: "admin@test.local", name: "Test Admin", role: "admin", status: "active", groupNames: [], createdAt: "2026-01-01T00:00:00.000Z" },
     });
@@ -55,9 +55,9 @@ describe("AppLayout", () => {
     const mainNav = screen.getByRole("navigation");
     expect(mainNav).not.toContainElement(adminLink);
 
-    const email = screen.getByText("admin@test.local");
+    const profileButton = screen.getByText("Test Admin");
     expect(
-      adminLink.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING,
+      adminLink.compareDocumentPosition(profileButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 });

@@ -46,6 +46,9 @@ jest.unstable_mockModule("../components/AccessPolicySummary", () => ({
 jest.unstable_mockModule("../components/ShareLinkPanel", () => ({
   ShareLinkPanel: () => <div>share link panel</div>,
 }));
+jest.unstable_mockModule("../components/RelatedArtifacts", () => ({
+  RelatedArtifacts: () => <div>related artifacts</div>,
+}));
 
 const { ArtifactDetailPage } = await import("./ArtifactDetailPage");
 

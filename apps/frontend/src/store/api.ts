@@ -5,6 +5,7 @@ import type {
   ArtifactFacetOptions,
   ArtifactListQuery,
   ArtifactListResponse,
+  ArtifactRelationshipSummary,
   ChangeRoleInput,
   CommentView,
   CorrectiveGroupChangeInput,
@@ -47,7 +48,7 @@ export const api = createApi({
       return headers;
     },
   }),
-  tagTypes: ["Me", "Artifact", "ArtifactList", "Comment", "User", "Group", "Invitation"],
+  tagTypes: ["Me", "Artifact", "ArtifactList", "Comment", "Relationship", "User", "Group", "Invitation"],
   endpoints: (builder) => ({
     getMe: builder.query<UserView, void>({
       query: () => "/me",
@@ -105,6 +106,11 @@ export const api = createApi({
         { type: "Comment", id: artifactId },
         { type: "Artifact", id: artifactId },
       ],
+    }),
+
+    getRelationships: builder.query<ArtifactRelationshipSummary[], string>({
+      query: (artifactId) => `/artifacts/${artifactId}/relationships`,
+      providesTags: (_result, _error, artifactId) => [{ type: "Relationship", id: artifactId }],
     }),
 
     updatePolicy: builder.mutation<ArtifactDetail, { artifactId: string; policy: AccessPolicyInput }>({
@@ -223,6 +229,7 @@ export const {
   useGetArtifactQuery,
   useGetCommentsQuery,
   useAddCommentMutation,
+  useGetRelationshipsQuery,
   useUpdatePolicyMutation,
   useRevokeAccessMutation,
   useCreateArtifactMutation,

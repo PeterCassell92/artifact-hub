@@ -19,10 +19,11 @@ backend (Express) serves both `/api/*` and `/mcp` over a shared `core` domain la
 - **Passwordless auth (magic link)** — all users incl. admins sign in via emailed magic link; no
   passwords, no password reset. See [02](docs/architecture/02-auth-identity-and-admin.md).
 - **Publishing is available two ways** — via an agent (`publish_artifact`, MCP) or via the SPA's
-  Dashboard ("Publish New Artifact"). Both paths converge on the same `core` create+finalize
-  logic; the UI path only ever collects a file — it always creates a private, owner-only,
-  never-expiring artifact (title = filename) that the owner then configures via the existing
-  access-policy editor. See [frontend/](docs/frontend/).
+  Dashboard ("Publish New Artifact", a two-step modal: pick a file, then set its access policy).
+  Both paths converge on the same `core` create+finalize logic; the UI path always names the
+  artifact after the file (no title-edit surface) and reuses the same audience/expiry fields —
+  including the "Specific people" **combo box of real users, never free text** — as the artifact
+  detail page's policy editor. See [frontend/](docs/frontend/).
 - **One owner-controlled access policy per artifact**, re-evaluated on every request → revocation
   is instant; **share links are pure locators**, never bearer tokens of access.
 - **The backend makes no LLM calls** — all logic is deterministic. Review summaries are an MCP

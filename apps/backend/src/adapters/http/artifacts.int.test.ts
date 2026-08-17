@@ -535,6 +535,137 @@ describe("GET /api/artifacts*", () => {
     });
   });
 
+  describe("GET /api/artifacts/:id/relationships", () => {
+    it("200s with relationships in both directions, resolving the other artifact when viewable", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const a = await makeArtifact({ ownerId: owner.id, title: "Source diagram" });
+      const b = await makeArtifact({ ownerId: owner.id, title: "Compiled PDF" });
+      await prisma.artifactRelationship.create({
+        data: { fromId: b.id, toId: a.id, type: "derived_from", note: "compiled export", createdById: owner.id },
+      });
+
+      const res = await request(app)
+        .get(`/api/artifacts/${a.id}/relationships`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0]).toMatchObject({
+        type: "derived_from",
+        direction: "incoming",
+        note: "compiled export",
+        otherArtifact: { id: b.id, title: "Compiled PDF" },
+      });
+    });
+
+    it("redacts the other artifact when the caller cannot view it", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const shared = await makeArtifact({
+        ownerId: owner.id,
+        title: "Shared with viewer",
+        audienceType: "specific_users",
+        allowedUserIds: [viewer.id],
+      });
+      const secret = await makeArtifact({ ownerId: owner.id, title: "Private", audienceType: "specific_users" });
+      await prisma.artifactRelationship.create({
+        data: { fromId: shared.id, toId: secret.id, type: "related_to", createdById: owner.id },
+      });
+
+      const res = await request(app)
+        .get(`/api/artifacts/${shared.id}/relationships`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(200);
+
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].otherArtifact).toBeNull();
+    });
+
+    it("403s for a user who cannot view the artifact itself", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const outsider = await makeActiveUser(`outsider-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "specific_users" });
+
+      await request(app)
+        .get(`/api/artifacts/${artifact.id}/relationships`)
+        .set("Authorization", `Bearer ${tokenFor(outsider.idpSub as string)}`)
+        .expect(403);
+    });
+  });
+
+  describe("POST /api/artifacts/:id/relationships", () => {
+    it("201s and persists for the owner linking to a viewable target", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const from = await makeArtifact({ ownerId: owner.id });
+      const to = await makeArtifact({ ownerId: owner.id });
+
+      const res = await request(app)
+        .post(`/api/artifacts/${from.id}/relationships`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ toId: to.id, type: "supersedes" })
+        .expect(201);
+
+      expect(res.body).toMatchObject({ relationshipId: expect.any(String) });
+      const stored = await prisma.artifactRelationship.findMany({ where: { fromId: from.id } });
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({ toId: to.id, type: "supersedes", createdById: owner.id });
+    });
+
+    it("403s for a non-owner of fromId", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const outsider = await makeActiveUser(`outsider-${Math.random()}@test.local`);
+      const from = await makeArtifact({ ownerId: owner.id });
+      const to = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      await request(app)
+        .post(`/api/artifacts/${from.id}/relationships`)
+        .set("Authorization", `Bearer ${tokenFor(outsider.idpSub as string)}`)
+        .send({ toId: to.id, type: "related_to" })
+        .expect(403);
+    });
+
+    it("403s when toId is not viewable by the caller", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const from = await makeArtifact({ ownerId: owner.id });
+      const secret = await makeArtifact({
+        ownerId: (await makeActiveUser(`other-${Math.random()}@test.local`)).id,
+        audienceType: "specific_users",
+      });
+
+      await request(app)
+        .post(`/api/artifacts/${from.id}/relationships`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ toId: secret.id, type: "related_to" })
+        .expect(403);
+    });
+
+    it("400s on a self-link", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      await request(app)
+        .post(`/api/artifacts/${artifact.id}/relationships`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ toId: artifact.id, type: "related_to" })
+        .expect(400);
+    });
+
+    it("409s on a duplicate (fromId, toId, type)", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const from = await makeArtifact({ ownerId: owner.id });
+      const to = await makeArtifact({ ownerId: owner.id });
+      await prisma.artifactRelationship.create({
+        data: { fromId: from.id, toId: to.id, type: "related_to", createdById: owner.id },
+      });
+
+      await request(app)
+        .post(`/api/artifacts/${from.id}/relationships`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ toId: to.id, type: "related_to" })
+        .expect(409);
+    });
+  });
+
   describe("PUT /api/artifacts/:id/policy (revocation)", () => {
     it("narrowing the audience flips a previously-allowed viewer to denied, and audits it", async () => {
       const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);

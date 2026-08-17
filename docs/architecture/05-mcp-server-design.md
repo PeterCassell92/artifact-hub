@@ -75,12 +75,14 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 
 | Tool | Purpose | Input (zod) | Result (metadata-only) |
 |------|---------|-------------|------------------------|
-| `publish_artifact` | Publish a new artifact + set its access policy | `{ title, description?, fileName, contentType, bytesRef, tags?, metadata?, audience:{type, userEmails?/groupNames?}, expiry: '24h'|'7d'|'30d'|'never' }` | `{ artifactId, resourceUri }` |
+| `publish_artifact` | Publish a new artifact + set its access policy | `{ title, description?, fileName, contentType, bytesRef, tags?, metadata?, audience:{type, userEmails?/groupNames?}, expiry: '24h'|'7d'|'30d'|'never', relationships?: [{toId, type, note?}] }` | `{ artifactId, resourceUri, relationshipResults? }` |
 | `list_artifacts` | List the caller's own artifacts ("My Artifacts") | `{ cursor?, limit? }` | table: id, title, filetype, createdAt, policy summary |
 | `list_shared_with_me` | List artifacts shared **to** the caller, optional time window | `{ sinceHours?, cursor?, limit? }` | **all** results returned; **first 10 rendered** as a markdown table (numeric id, filetype, publishingUserName, publicationDate) |
 | `get_artifact` | Fetch **small** content inline for reasoning | `{ id }` | small image → image block; small text/PDF → embedded resource; else → pointer to `artifact://<id>` |
 | `comment_on_artifact` | Add an attributable comment | `{ id, body }` | `{ commentId, createdAt }` |
 | `list_comments` | Read back an artifact's comments, oldest first | `{ id }` | `{ comments: [{ id, authorName, body, createdAt }] }` + markdown table |
+| `link_artifacts` | Link an owned artifact to one you can view (`supersedes`/`derived_from`/`related_to`), post-hoc | `{ fromId, toId, type, note? }` | `{ relationshipId, createdAt }` |
+| `list_artifact_relationships` | Read back an artifact's relationships, either direction | `{ id }` | `{ relationships: [{ id, type, direction, note, otherArtifact, createdByName, createdAt }] }` + markdown table |
 | `create_share_link` | Mint a locator link for an artifact you can view (owner or not) | `{ id }` | `{ url }` |
 | `set_access_policy` | Change an owned artifact's audience/expiry — narrowing is the general revocation mechanism | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
 | `revoke_access` | Instant, whole-artifact cutoff for an owned artifact — independent of audience/expiry (`03` §1a) | `{ id }` | `{ ok, revokedAt }` |
@@ -96,8 +98,10 @@ Notes:
   caller doesn't belong to is a supported journey**, not an error) rather than guessing. Neither
   tool exposes group *membership rosters* or any create/rename/membership-change capability —
   read-only names/descriptions only, staying clear of the "no group management over MCP" rule below.
-- **Publishing is exclusive to this path** — there is no publish/upload screen in the SPA (see
-  `06` and `../frontend/`). Artifacts are created only via `publish_artifact`.
+- **Publishing is also available via the SPA** (see `06` and `../frontend/`) — a "Publish New
+  Artifact" modal on the Dashboard, file-only (title = filename), that still requires the owner to
+  set a real audience there before it saves. `publish_artifact` remains the only way to set rich
+  metadata (kind/tags/sourceTool/format/language/custom `metadata`) at creation time.
 - **Capture rich metadata at publish.** `publish_artifact` should collect the classification
   metadata that powers the frontend filters — `kind`, `tags`, `sourceTool` (e.g. "Claude
   Desktop"), `format`, plus free-form `metadata` — per [`../models/artifact.md`](../models/artifact.md).
@@ -109,6 +113,16 @@ Notes:
 - `list_shared_with_me` directly satisfies *"Which artifacts have been shared with me in the
   last 24 hours?"* — pass `sinceHours: 24`. It returns the full set (for the agent to reason
   over) but renders only the first 10 rows as the required markdown table.
+- **Relationships enrich at the moment of most context.** `publish_artifact`'s optional
+  `relationships` links a brand-new artifact to existing ones in the same call (`type` one of
+  `supersedes`/`derived_from`/`related_to`, plus an optional `note`); a bad `toId` is reported
+  per-entry in `relationshipResults`, it never fails the publish itself. `link_artifacts` is the
+  post-hoc equivalent for when the connection only becomes clear later. Both are owner-only for
+  `fromId`; `toId` only needs to be `canView`-able by the linker, not owned by them —
+  linking your artifact to someone else's (that you can see) is a supported journey.
+  `list_artifact_relationships` reads them back, redacting `otherArtifact` to `null` per-row when
+  the caller can't view that side, so a relationship on a visible artifact never leaks a private
+  one on its far end.
 
 ### `list_shared_with_me` result shape (illustrative)
 

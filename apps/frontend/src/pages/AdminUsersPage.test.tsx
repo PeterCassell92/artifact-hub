@@ -94,18 +94,7 @@ describe("AdminUsersPage", () => {
     expect(inviteUser).not.toHaveBeenCalled();
   });
 
-  it("requires at least one group before inviting", async () => {
-    renderPage();
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText(/email/i), "new@test.local");
-    await user.click(screen.getByRole("button", { name: /^invite$/i }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(/select at least one group/i);
-    expect(inviteUser).not.toHaveBeenCalled();
-  });
-
-  it("invites with the selected email/role/groups once valid", async () => {
+  it("requires a name before inviting", async () => {
     renderPage();
     const user = userEvent.setup();
 
@@ -113,15 +102,23 @@ describe("AdminUsersPage", () => {
     await user.click(screen.getByLabelText("Engineering"));
     await user.click(screen.getByRole("button", { name: /^invite$/i }));
 
-    expect(inviteUser).toHaveBeenCalledWith({
-      email: "new@test.local",
-      name: undefined,
-      role: "member",
-      groupIds: ["group-1"],
-    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/enter a name/i);
+    expect(inviteUser).not.toHaveBeenCalled();
   });
 
-  it("includes the name when the admin provides one", async () => {
+  it("requires at least one group before inviting", async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/email/i), "new@test.local");
+    await user.type(screen.getByLabelText(/^name$/i), "New Person");
+    await user.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/select at least one group/i);
+    expect(inviteUser).not.toHaveBeenCalled();
+  });
+
+  it("invites with the selected email/name/role/groups once valid", async () => {
     renderPage();
     const user = userEvent.setup();
 

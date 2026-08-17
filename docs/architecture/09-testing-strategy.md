@@ -164,6 +164,7 @@ CI (`ci.yml`, see `08`) runs `yarn install --immutable` then `yarn lint`, `yarn 
 | `.feature` scenario | Primary automated layer |
 |---------------------|-------------------------|
 | publisher-publish-with-policy | MCP in-memory (`publish_artifact`) + core unit (policy) |
+| publisher-publish-via-ui | API integration (`POST /api/artifacts` + `.../finalize`) + React component (`PublishArtifactModal`) |
 | publisher-revoke-and-my-artifacts | API integration (policy update + My Artifacts) + core unit |
 | reviewer-access-via-ui | API integration (authz/download/comments) + React component (detail/comment) |
 | reviewer-access-via-mcp | MCP in-memory + HTTP (`list_shared_with_me`, resource read) |

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ArtifactKind, RelationType } from "./enums";
 
 /** A comment as shown in the UI/MCP (body, author name, date). */
 export const CommentView = z.object({
@@ -28,3 +29,41 @@ export const ShareLinkRedemptionResponse = z.object({
   artifactId: z.string().uuid(),
 });
 export type ShareLinkRedemptionResponse = z.infer<typeof ShareLinkRedemptionResponse>;
+
+/** One relationship to link, either inline at publish time (`publish_artifact`'s
+ * `relationships`) or via a dedicated `link_artifacts` call / POST .../relationships. */
+export const ArtifactRelationshipInput = z.object({
+  toId: z.string().uuid(),
+  type: RelationType,
+  /** Short free-text label, e.g. "post-processed export" — not a second description field. */
+  note: z.string().max(280).optional(),
+});
+export type ArtifactRelationshipInput = z.infer<typeof ArtifactRelationshipInput>;
+
+/** GET .../relationships row — resolved enough to render without a follow-up fetch.
+ * `otherArtifact` is null when the caller can't view the other side (redacted, not leaked —
+ * see docs/architecture/06 §2). */
+export const ArtifactRelationshipSummary = z.object({
+  id: z.string().uuid(),
+  type: RelationType,
+  direction: z.enum(["outgoing", "incoming"]),
+  note: z.string().nullable(),
+  otherArtifact: z
+    .object({
+      id: z.string().uuid(),
+      title: z.string(),
+      kind: ArtifactKind,
+      ownerId: z.string().uuid(),
+    })
+    .nullable(),
+  createdByName: z.string().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type ArtifactRelationshipSummary = z.infer<typeof ArtifactRelationshipSummary>;
+
+/** POST .../relationships response. */
+export const ArtifactRelationshipCreateResponse = z.object({
+  relationshipId: z.string().uuid(),
+  createdAt: z.string().datetime(),
+});
+export type ArtifactRelationshipCreateResponse = z.infer<typeof ArtifactRelationshipCreateResponse>;
