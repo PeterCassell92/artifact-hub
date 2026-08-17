@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { UserView } from "contracts";
+import { useCloseOnOutsideOrEscape } from "../lib/useCloseOnOutsideOrEscape";
 
 interface UserProfilePopoverProps {
   user: UserView;
@@ -10,23 +11,7 @@ export function UserProfilePopover({ user }: UserProfilePopoverProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    const onPointerDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("mousedown", onPointerDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onPointerDown);
-    };
-  }, [open]);
+  useCloseOnOutsideOrEscape(containerRef, open, setOpen);
 
   const joinDate = new Date(user.createdAt).toLocaleDateString(undefined, {
     year: "numeric",

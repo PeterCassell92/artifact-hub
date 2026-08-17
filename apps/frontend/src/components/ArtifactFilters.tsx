@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArtifactKind, AudienceType } from "contracts";
 import type { ArtifactFacetOptions } from "contracts";
 import type { ArtifactListFilters } from "../store/api";
 import { audienceLabel, kindLabel, sortLabel } from "../lib/formatters";
+import { useCloseOnOutsideOrEscape } from "../lib/useCloseOnOutsideOrEscape";
 
 const SORT_OPTIONS: ArtifactListFilters["sort"][] = ["published", "title", "lastAccessed", "size"];
 
@@ -65,6 +66,9 @@ interface ArtifactFiltersProps {
  * passes it down; this component only ever calls `onChange` with the next full filter object. */
 export function ArtifactFilters({ scope, value, onChange, facets }: ArtifactFiltersProps) {
   const [searchText, setSearchText] = useState(value.q ?? "");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersContainerRef = useRef<HTMLDivElement>(null);
+  useCloseOnOutsideOrEscape(filtersContainerRef, filtersOpen, setFiltersOpen);
 
   // Keep the input in sync if the filters change from outside (e.g. a "clear filters" action).
   useEffect(() => {
@@ -83,8 +87,16 @@ export function ArtifactFilters({ scope, value, onChange, facets }: ArtifactFilt
     // would fire on every parent re-render and defeat the debounce.
   }, [searchText]);
 
+  const activeFacetFilterCount =
+    (value.kind?.length ?? 0) +
+    (scope === "mine" ? (value.audienceType?.length ?? 0) : 0) +
+    (value.contentType?.length ?? 0) +
+    (value.tags?.length ?? 0) +
+    (value.sourceTool?.length ?? 0) +
+    (scope === "sharedWithMe" ? (value.publisherId?.length ?? 0) : 0);
+
   return (
-    <div className="flex flex-col gap-4 rounded-md border border-neutral-200 bg-white p-4">
+    <div className="rounded-md border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-sm text-neutral-700">
           Search
@@ -150,58 +162,84 @@ export function ArtifactFilters({ scope, value, onChange, facets }: ArtifactFilt
             </select>
           </label>
         )}
-      </div>
 
-      <div className="flex flex-wrap gap-x-8 gap-y-3">
-        <CheckboxGroup
-          label="Kind"
-          options={ArtifactKind.options}
-          selected={value.kind}
-          labelFor={kindLabel}
-          onChange={(kind) => onChange({ ...value, kind })}
-        />
-
-        {scope === "mine" && (
-          <CheckboxGroup
-            label="Audience"
-            options={AudienceType.options}
-            selected={value.audienceType}
-            labelFor={audienceLabel}
-            onChange={(audienceType) => onChange({ ...value, audienceType })}
-          />
-        )}
-
-        {facets && (
-          <>
-            <CheckboxGroup
-              label="File type"
-              options={facets.contentTypes}
-              selected={value.contentType}
-              onChange={(contentType) => onChange({ ...value, contentType })}
-            />
-            <CheckboxGroup
-              label="Tags"
-              options={facets.tags}
-              selected={value.tags}
-              onChange={(tags) => onChange({ ...value, tags })}
-            />
-            <CheckboxGroup
-              label="Source tool"
-              options={facets.sourceTools}
-              selected={value.sourceTool}
-              onChange={(sourceTool) => onChange({ ...value, sourceTool })}
-            />
-            {scope === "sharedWithMe" && (
-              <CheckboxGroup
-                label="Publisher"
-                options={facets.publishers.map((p) => p.id)}
-                selected={value.publisherId}
-                labelFor={(id) => facets.publishers.find((p) => p.id === id)?.name ?? "Unknown"}
-                onChange={(publisherId) => onChange({ ...value, publisherId })}
-              />
+        <div ref={filtersContainerRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((prev) => !prev)}
+            aria-expanded={filtersOpen}
+            aria-controls="artifact-filters-panel"
+            className="flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+          >
+            Filters
+            {activeFacetFilterCount > 0 && (
+              <span className="rounded-full bg-neutral-900 px-1.5 py-0.5 text-xs font-semibold leading-none text-white">
+                {activeFacetFilterCount}
+              </span>
             )}
-          </>
-        )}
+          </button>
+
+          {filtersOpen && (
+            <div
+              id="artifact-filters-panel"
+              role="group"
+              aria-label="Filters"
+              className="absolute right-0 top-full z-20 mt-2 max-h-96 w-[min(90vw,40rem)] overflow-y-auto rounded-md border border-neutral-200 bg-white p-4 shadow-lg"
+            >
+              <div className="flex flex-wrap gap-x-8 gap-y-3">
+                <CheckboxGroup
+                  label="Kind"
+                  options={ArtifactKind.options}
+                  selected={value.kind}
+                  labelFor={kindLabel}
+                  onChange={(kind) => onChange({ ...value, kind })}
+                />
+
+                {scope === "mine" && (
+                  <CheckboxGroup
+                    label="Audience"
+                    options={AudienceType.options}
+                    selected={value.audienceType}
+                    labelFor={audienceLabel}
+                    onChange={(audienceType) => onChange({ ...value, audienceType })}
+                  />
+                )}
+
+                {facets && (
+                  <>
+                    <CheckboxGroup
+                      label="File type"
+                      options={facets.contentTypes}
+                      selected={value.contentType}
+                      onChange={(contentType) => onChange({ ...value, contentType })}
+                    />
+                    <CheckboxGroup
+                      label="Tags"
+                      options={facets.tags}
+                      selected={value.tags}
+                      onChange={(tags) => onChange({ ...value, tags })}
+                    />
+                    <CheckboxGroup
+                      label="Source tool"
+                      options={facets.sourceTools}
+                      selected={value.sourceTool}
+                      onChange={(sourceTool) => onChange({ ...value, sourceTool })}
+                    />
+                    {scope === "sharedWithMe" && (
+                      <CheckboxGroup
+                        label="Publisher"
+                        options={facets.publishers.map((p) => p.id)}
+                        selected={value.publisherId}
+                        labelFor={(id) => facets.publishers.find((p) => p.id === id)?.name ?? "Unknown"}
+                        onChange={(publisherId) => onChange({ ...value, publisherId })}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

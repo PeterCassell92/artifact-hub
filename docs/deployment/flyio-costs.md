@@ -54,3 +54,19 @@ not re-derived here since it wasn't priced out as part of this pass.
   cluster (`fly mpg destroy`) as soon as the demo is done rather than leaving it running.
 - **Tigris storage is effectively free** at demo scale.
 - Netlify's free tier comfortably covers the SPA.
+
+## Tearing down this deployment
+
+This environment's actual resource names (see [`netlify-project.md`](netlify-project.md) for
+URLs). Run these once the demo is over to stop the Postgres billing clock — the app/storage don't
+meaningfully cost anything left running, but destroy them too if you want a totally clean account:
+
+```bash
+fly mpg destroy --cluster artifact-hub-db --app artifact-hub-backend   # stops the ~$38/mo clock
+fly apps destroy artifact-hub-backend                                  # optional — removes the app + Tigris bucket + machines
+netlify sites:delete --filter frontend                                 # optional — removes the Netlify site
+```
+
+Also worth deleting/disabling the `ArtifactHub-Prod` Auth0 tenant objects (or the whole tenant) if
+this was only ever meant to be a short-lived demo, since Auth0 tenants persist independently of
+Fly/Netlify.

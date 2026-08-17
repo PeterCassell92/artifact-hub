@@ -54,6 +54,7 @@ describe("ArtifactFilters", () => {
     const user = userEvent.setup();
     renderFilters("mine", { sort: "published" }, onChange);
 
+    await user.click(screen.getByRole("button", { name: /filters/i }));
     await user.click(screen.getByRole("checkbox", { name: /diagram/i }));
 
     expect(onChange).toHaveBeenCalledWith({ sort: "published", kind: ["diagram"] });
@@ -64,13 +65,30 @@ describe("ArtifactFilters", () => {
     const user = userEvent.setup();
     renderFilters("mine", { sort: "published", kind: ["diagram", "document"] }, onChange);
 
+    await user.click(screen.getByRole("button", { name: /filters/i }));
     await user.click(screen.getByRole("checkbox", { name: /diagram/i }));
 
     expect(onChange).toHaveBeenCalledWith({ sort: "published", kind: ["document"] });
   });
 
-  it("shows Audience and Access state controls for scope=mine, not Publisher/Shared window", () => {
+  it("shows a badge with the number of active facet filters and clears on outside click/Escape", async () => {
+    const user = userEvent.setup();
+    renderFilters("mine", { sort: "published", kind: ["diagram", "document"], tags: ["v1"] }, jest.fn(), FACETS);
+
+    const filtersButton = screen.getByRole("button", { name: /filters/i });
+    expect(filtersButton).toHaveTextContent("3");
+
+    await user.click(filtersButton);
+    expect(screen.getByRole("group", { name: /filters/i })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: /filters/i })).not.toBeInTheDocument();
+  });
+
+  it("shows Audience and Access state controls for scope=mine, not Publisher/Shared window", async () => {
+    const user = userEvent.setup();
     renderFilters("mine", { sort: "published" }, jest.fn(), FACETS);
+    await user.click(screen.getByRole("button", { name: /filters/i }));
 
     expect(screen.getByText(/audience/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/access state/i)).toBeInTheDocument();
@@ -78,8 +96,10 @@ describe("ArtifactFilters", () => {
     expect(screen.queryByLabelText(/shared window/i)).not.toBeInTheDocument();
   });
 
-  it("shows Publisher and Shared window controls for scope=sharedWithMe, not Audience/Access state", () => {
+  it("shows Publisher and Shared window controls for scope=sharedWithMe, not Audience/Access state", async () => {
+    const user = userEvent.setup();
     renderFilters("sharedWithMe", { sort: "published" }, jest.fn(), FACETS);
+    await user.click(screen.getByRole("button", { name: /filters/i }));
 
     expect(screen.getByText(/publisher/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/shared window/i)).toBeInTheDocument();
@@ -92,13 +112,16 @@ describe("ArtifactFilters", () => {
     const user = userEvent.setup();
     renderFilters("sharedWithMe", { sort: "published" }, onChange, FACETS);
 
+    await user.click(screen.getByRole("button", { name: /filters/i }));
     await user.click(screen.getByRole("checkbox", { name: "Ada Lovelace" }));
 
     expect(onChange).toHaveBeenCalledWith({ sort: "published", publisherId: ["user-1"] });
   });
 
-  it("does not render facet-derived checkbox groups until facets are loaded", () => {
+  it("does not render facet-derived checkbox groups until facets are loaded", async () => {
+    const user = userEvent.setup();
     renderFilters("mine", { sort: "published" }, jest.fn());
+    await user.click(screen.getByRole("button", { name: /filters/i }));
 
     expect(screen.queryByText(/file type/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/tags/i)).not.toBeInTheDocument();
