@@ -1,4 +1,11 @@
-import { GetObjectCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  NotFound,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getEnv } from "../env";
 
@@ -80,6 +87,13 @@ export async function headObject(storageKey: string): Promise<{ sizeBytes: numbe
     if (err instanceof NotFound) return null;
     throw err;
   }
+}
+
+/** Removes an object that failed a post-upload check (e.g. the `finalizeArtifact` size cap) —
+ * the presigned PUT already landed it in storage before the backend got a chance to reject it. */
+export async function deleteObject(storageKey: string): Promise<void> {
+  const env = getEnv();
+  await getClient().send(new DeleteObjectCommand({ Bucket: env.BUCKET_NAME, Key: storageKey }));
 }
 
 export interface ObjectBytes {

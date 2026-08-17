@@ -21,7 +21,7 @@ Related: [`../frontend/02-filtering-and-search.md`](../frontend/02-filtering-and
 | `contentType` | string (MIME) | yes | e.g. `application/pdf` | yes (filetype) |
 | `fileExtension` | string | derived | e.g. `.pdf`, `.mmd` — derived from fileName/contentType | yes (filetype) |
 | `storageKey` | string | yes | Object key in the private Tigris (S3-compatible) bucket | — |
-| `sizeBytes` | bigint | yes | File size | yes (range) |
+| `sizeBytes` | bigint | yes | File size — capped at 500MB (`MAX_ARTIFACT_SIZE_BYTES`, `packages/contracts`); an oversized upload is rejected and deleted at finalize (see `../architecture/05-mcp-server-design.md`) | yes (range) |
 | `checksumSha256` | string | no | Content hash (integrity / dedupe signal) | — |
 | `createdAt` / `publishedAt` | timestamp | yes | Publication date | yes (date range) |
 

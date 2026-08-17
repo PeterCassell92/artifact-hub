@@ -1182,6 +1182,25 @@ describe("GET /api/artifacts*", () => {
       expect(res.body.sizeBytes).toBe(Buffer.byteLength("the actual bytes"));
     });
 
+    it("413s and deletes the object when the upload exceeds the 500MB cap", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const { artifactId, uploadUrl } = await createPending(owner.idpSub as string);
+
+      const oversized = Buffer.alloc(500 * 1024 * 1024 + 1);
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        body: oversized,
+        headers: { "Content-Type": "text/plain" },
+      });
+      expect(putRes.ok).toBe(true);
+
+      const res = await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(413);
+      expect(res.body.error.code).toBe("payload_too_large");
+    }, 60_000);
+
     it("409s when the upload hasn't landed yet", async () => {
       const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
       const { artifactId } = await createPending(owner.idpSub as string);

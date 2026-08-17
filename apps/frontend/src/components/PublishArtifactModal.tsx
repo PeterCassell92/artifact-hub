@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ArtifactKind, type AudienceType, type ExpiryOption } from "contracts";
+import { ArtifactKind, MAX_ARTIFACT_SIZE_BYTES, type AudienceType, type ExpiryOption } from "contracts";
 import {
   useCreateArtifactMutation,
   useFinalizeArtifactMutation,
@@ -90,6 +90,8 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
     onClose();
   }
 
+  const fileTooLarge = file != null && file.size > MAX_ARTIFACT_SIZE_BYTES;
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
     setFile(selected);
@@ -165,7 +167,7 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
             </button>
             <button
               type="button"
-              disabled={!file}
+              disabled={!file || fileTooLarge}
               onClick={() => setStep("metadata")}
               className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
             >
@@ -240,6 +242,12 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
               >
                 Choose a different file
               </button>
+              {fileTooLarge && (
+                <p role="alert" className="mt-3 text-sm text-red-600">
+                  This file is {formatBytes(file!.size)} — the limit is{" "}
+                  {formatBytes(MAX_ARTIFACT_SIZE_BYTES)}. Choose a smaller file.
+                </p>
+              )}
             </div>
           )}
         </>

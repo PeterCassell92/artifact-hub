@@ -142,6 +142,35 @@ describe("Agents can publish a new artifact without ever sending its bytes throu
     expect(Number(stored!.sizeBytes)).toBe(Buffer.byteLength("the actual bytes"));
   });
 
+  it("refuses to finish a publish whose upload exceeds the 500MB cap, and deletes the oversized object", async () => {
+    const { client } = await ctx.connectAsUser(`owner-${randomUUID()}@test.local`);
+    const start = await client.callTool({
+      name: "publish_artifact",
+      arguments: {
+        title: "Too big",
+        fileName: "huge.bin",
+        contentType: "application/octet-stream",
+        audience: { type: "public_authenticated" },
+        expiry: "never",
+      },
+    });
+    const { artifactId, uploadUrl } = textPayload(start) as { artifactId: string; uploadUrl: string };
+
+    const oversized = Buffer.alloc(500 * 1024 * 1024 + 1);
+    const putResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      body: oversized,
+      headers: { "Content-Type": "application/octet-stream" },
+    });
+    expect(putResponse.ok).toBe(true);
+
+    const finish = await client.callTool({ name: "publish_artifact", arguments: { bytesRef: artifactId } });
+    expect(finish.isError).toBe(true);
+
+    const stored = await ctx.prisma.artifact.findUnique({ where: { id: artifactId } });
+    expect(Number(stored!.sizeBytes)).toBe(0);
+  }, 60_000);
+
   it("links relationships to already-existing artifacts at publish time, reporting per-entry outcomes", async () => {
     const { client, user } = await ctx.connectAsUser(`owner-${randomUUID()}@test.local`);
     const source = await ctx.makeArtifact({ ownerId: user.id, title: "Source diagram" });

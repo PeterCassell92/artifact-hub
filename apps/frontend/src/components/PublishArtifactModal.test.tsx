@@ -48,6 +48,14 @@ function makeFile(name = "report.pdf", type = "application/pdf", content = "hell
   return new File([content], name, { type });
 }
 
+// jsdom derives `size` from the actual Blob content, so a real 500MB+ File would mean allocating
+// 500MB in every test run — override the getter instead to exercise the boundary cheaply.
+function makeFileWithSize(size: number, name = "huge.bin", type = "application/octet-stream") {
+  const file = new File(["x"], name, { type });
+  Object.defineProperty(file, "size", { value: size });
+  return file;
+}
+
 // jsdom doesn't define `fetch`, so there's nothing for `jest.spyOn(global, "fetch")` to spy on.
 function mockFetch(response: Partial<Response>) {
   const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(response as Response);
@@ -104,6 +112,17 @@ describe("PublishArtifactModal", () => {
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
     expect(screen.getByText(/application\/pdf/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
+  });
+
+  it("step 1: rejects a file over the 500MB cap with an inline error, Next stays disabled", async () => {
+    renderModal();
+    const user = userEvent.setup();
+
+    await selectFile(user, makeFileWithSize(500 * 1024 * 1024 + 1));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/500\.0 MB/i);
+    expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
+    expect(createArtifact).not.toHaveBeenCalled();
   });
 
   it("step 2 (metadata): pre-fills the name and an inferred kind from the file, and always allows Next", async () => {

@@ -112,6 +112,27 @@ Notes:
 - **Upload path** for `publish_artifact`: hand the client a **presigned PUT** so bytes go
   straight to Tigris out-of-band (`bytesRef` correlates the upload), *or* accept small content
   inline for tiny artifacts. Large bytes never transit a tool argument/result.
+- **500MB size cap.** The presigned PUT has no size condition, so the finish call is the earliest
+  point the backend actually knows how big the upload was: it `HeadObject`s the file, and if it's
+  over `MAX_ARTIFACT_SIZE_BYTES` (`packages/contracts`), deletes the object and returns an error
+  instead of recording it — a low-effort guardrail against storage costs ballooning (demo has
+  trusted publishers only, not a security control). Same cap applies to the SPA's upload (`06`),
+  which also pre-checks client-side before it starts uploading.
+  - **Known limitation: this is a post-hoc check, not a pre-upload block.** By the time
+    `finalizeArtifact` runs, the full file has already landed in Tigris — the client-side
+    check (SPA) or an honest MCP agent is the only thing stopping an oversized upload before
+    the bytes actually transfer; a caller that ignores `fileName`/size and PUTs anyway will
+    still push the full file to Tigris before the reject-and-delete kicks in. Acceptable for a
+    trusted-users demo (brief storage exposure, not a real cost or abuse vector), but not a true
+    limit enforced at the storage layer.
+  - **Better alternative (not implemented):** switch the presigned upload from
+    `PutObjectCommand`+`getSignedUrl` (`storage/s3.ts`) to S3's `createPresignedPost` with a
+    `content-length-range` condition — Tigris/S3 would then reject an oversized upload
+    mid-transfer, before it's fully landed, no reactive delete needed. Bigger change: it moves
+    the upload from a raw `fetch(url, {method:"PUT", body: file})` to a multipart form POST, so
+    it touches `storage/s3.ts`, the SPA's upload call, and the MCP `publish_artifact` docs/agent
+    contract (the presigned URL response shape changes from a bare URL to
+    `{url, fields}`).
 
 - `list_shared_with_me` directly satisfies *"Which artifacts have been shared with me in the
   last 24 hours?"* — pass `sinceHours: 24`. It returns the full set (for the agent to reason

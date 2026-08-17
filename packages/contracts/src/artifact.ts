@@ -34,6 +34,11 @@ export const AccessPolicyInput = AudiencePolicyFields.refine(specificUsersHaveEm
 }).refine(userGroupsHaveGroups, { message: "user_groups requires at least one groupName" });
 export type AccessPolicyInput = z.infer<typeof AccessPolicyInput>;
 
+/** Upload cap, enforced in `finalizeArtifact` (post-`HeadObject`) and pre-checked client-side by
+ * the SPA before it starts uploading — a fixed, low-effort guardrail against storage costs
+ * ballooning, not a security control (demo has trusted publishers only). */
+export const MAX_ARTIFACT_SIZE_BYTES = 500 * 1024 * 1024;
+
 /** Classification metadata captured at publish time (drives frontend filters). */
 export const ArtifactMetadataInput = z.object({
   kind: ArtifactKind.optional(),

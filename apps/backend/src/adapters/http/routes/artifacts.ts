@@ -15,6 +15,7 @@ import {
   CreateCommentInput,
   DownloadUrlResponse,
   FinalizeArtifactInput,
+  MAX_ARTIFACT_SIZE_BYTES,
   ShareLinkView,
 } from "contracts";
 import { canCreateShareLink, canManagePolicy, canView } from "../../../core/authz";
@@ -192,6 +193,15 @@ export function createArtifactsRouter(): Router {
       }
       if (result.reason === "forbidden") {
         sendError(res, 403, "forbidden", "You do not own this artifact");
+        return;
+      }
+      if (result.reason === "too_large") {
+        sendError(
+          res,
+          413,
+          "payload_too_large",
+          `File exceeds the ${MAX_ARTIFACT_SIZE_BYTES / (1024 * 1024)}MB limit`,
+        );
         return;
       }
       // "object_missing" — the PUT hasn't landed yet; retryable, not a hard client error.

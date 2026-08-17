@@ -25,7 +25,7 @@ The REST API is the HTTP adapter that serves the SPA (including the admin area) 
   { "error": { "code": "forbidden", "message": "…", "details": { } } }
   ```
   Codes: `bad_request`, `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`,
-  `internal`. HTTP status mirrors the code.
+  `payload_too_large`, `internal`. HTTP status mirrors the code.
 
 ---
 
@@ -39,7 +39,7 @@ The REST API is the HTTP adapter that serves the SPA (including the admin area) 
 | Method & path | Purpose | Authz |
 |---------------|---------|-------|
 | `POST /api/artifacts` | Create artifact metadata + policy; returns a **presigned PUT** for the body | authenticated (becomes owner) |
-| `POST /api/artifacts/:id/finalize` | Confirm upload complete (size/mime/checksum recorded) | owner |
+| `POST /api/artifacts/:id/finalize` | Confirm upload complete (size/mime/checksum recorded). `413 payload_too_large` (and deletes the object) if the upload exceeds `MAX_ARTIFACT_SIZE_BYTES` (500MB, `packages/contracts`) — see `05` | owner |
 | `GET /api/artifacts/:id` | Artifact detail (metadata + policy + can-I-view). **Records an AccessEvent** (`route=ui`, `view`) | `canView` |
 | `GET /api/artifacts` | List artifacts visible to me (filters: `mine`, `sharedWithMe`, `sinceHours`, plus search/facets — see frontend/02) | per-item `canView` |
 | `GET /api/artifacts/:id/download` | Mint ~60s presigned URL and `302` redirect. **Records an AccessEvent** (`route=ui`, `download`) | `canView` |

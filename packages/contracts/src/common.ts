@@ -8,6 +8,7 @@ export const ApiErrorCode = z.enum([
   "not_found",
   "conflict",
   "rate_limited",
+  "payload_too_large",
   "internal",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;

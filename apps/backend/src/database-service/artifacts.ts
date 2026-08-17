@@ -1,12 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import type { AccessAction, AccessRoute, ArtifactDetail, ArtifactKind, ArtifactSummary, AudienceType } from "contracts";
+import {
+  MAX_ARTIFACT_SIZE_BYTES,
+  type AccessAction,
+  type AccessRoute,
+  type ArtifactDetail,
+  type ArtifactKind,
+  type ArtifactSummary,
+  type AudienceType,
+} from "contracts";
 import { prisma } from "../db";
 import { canView, type ArtifactPolicy, type Decision, type Viewer } from "../core/authz";
 import { recordAccessEvent } from "./accessEvents";
 import { findUsersByEmails } from "./adminUsers";
 import { findGroupsByNames } from "./groups";
-import { getPresignedUploadUrl, headObject } from "../storage/s3";
+import { deleteObject, getPresignedUploadUrl, headObject } from "../storage/s3";
 import { enqueueOutboxEvent, type EnqueueOutboxEventInput } from "./outbox";
 import { buildPublishNotificationEvents } from "./artifactRecipients";
 
@@ -468,11 +476,13 @@ export async function createArtifactPending(
 
 export type FinalizeArtifactResult =
   | { ok: true; artifact: ArtifactWithPolicyJoins }
-  | { ok: false; reason: "not_found" | "forbidden" | "object_missing" };
+  | { ok: false; reason: "not_found" | "forbidden" | "object_missing" | "too_large" };
 
 /**
  * Step 2 of the `publish_artifact` flow: confirms the presigned-PUT upload actually landed
- * (`HeadObject`) before recording size/checksum — a bare `bytesRef` can't fake a finalize.
+ * (`HeadObject`) before recording size/checksum — a bare `bytesRef` can't fake a finalize. Also
+ * rejects (and deletes) anything over `MAX_ARTIFACT_SIZE_BYTES` — the presigned PUT has no size
+ * condition, so this is the earliest point the backend actually knows how big the upload was.
  */
 export async function finalizeArtifact(
   artifactId: string,
@@ -485,6 +495,11 @@ export async function finalizeArtifact(
 
   const head = await headObject(artifact.storageKey);
   if (!head) return { ok: false, reason: "object_missing" };
+
+  if (head.sizeBytes > MAX_ARTIFACT_SIZE_BYTES) {
+    await deleteObject(artifact.storageKey);
+    return { ok: false, reason: "too_large" };
+  }
 
   await prisma.artifact.update({
     where: { id: artifactId },

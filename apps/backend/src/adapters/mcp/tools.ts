@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Logger } from "pino";
+import { MAX_ARTIFACT_SIZE_BYTES } from "contracts";
 import type { AuthenticatedViewer } from "../../auth/tokenValidation";
 import { canCreateShareLink, canManagePolicy, canView } from "../../core/authz";
 import { computeExpiresAt } from "../../core/policy";
@@ -267,6 +268,10 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
             case "object_missing":
               return toolError(
                 "The file hasn't landed in storage yet — PUT it to the uploadUrl from the start call, then retry.",
+              );
+            case "too_large":
+              return toolError(
+                `File exceeds the ${MAX_ARTIFACT_SIZE_BYTES / (1024 * 1024)}MB limit — publish a smaller file.`,
               );
           }
         }

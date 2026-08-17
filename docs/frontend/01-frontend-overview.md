@@ -42,9 +42,11 @@ magic-link sign-in and then redirected straight to that artifact's detail view.
   With Me, each with a "View all" link to the full `/artifacts` / `/shared` page.
 - A full-width **"Publish New Artifact"** button under My Artifacts opens a two-step modal: step 1
   picks a file (a dashed drop-tile with a plus icon; clicking anywhere opens the native file
-  picker; once chosen, shows name/size/type), step 2 sets the access policy (same audience/expiry
-  fields as the artifact detail page's editor, including the "Specific people" combo box). Title
-  is always the file's name. On success the modal closes and the list refetches.
+  picker; once chosen, shows name/size/type — a file over the **500MB** cap shows an inline error
+  and blocks Next; the backend enforces the same cap on finalize, see arch `05`/`06`), step 2 sets
+  the access policy (same audience/expiry fields as the artifact detail page's editor, including
+  the "Specific people" combo box). Title is always the file's name. On success the modal closes
+  and the list refetches.
 - Prominent **search** box and the primary **filters** (see `02-filtering-and-search.md`).
 - Empty state for a brand-new member explains they can publish either by clicking "Publish New
   Artifact" or by asking their agent (Claude Desktop) via Artifact Hub's MCP tools.
