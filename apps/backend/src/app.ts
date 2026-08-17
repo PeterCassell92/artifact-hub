@@ -2,6 +2,7 @@ import cors from "cors";
 import express, { type Express } from "express";
 import { prisma } from "./db";
 import { getEnv } from "./env";
+import { requestLogging } from "./adapters/http/requestLogging";
 import { createApiRouter } from "./adapters/http/router";
 import { createInvitationsPublicRouter } from "./adapters/http/routes/invitationsPublic";
 import { mountMcp } from "./adapters/mcp/server";
@@ -15,6 +16,9 @@ export function createApp(): Express {
   // Bearer header, not a cookie, so no credentials mode is needed.
   app.use(cors({ origin: getEnv().APP_ORIGIN }));
   app.use(express.json({ limit: "1mb" }));
+  // Request-correlation-id logging (docs/architecture/10 §1) — one mount point ahead of every
+  // router below covers both /api/* and /mcp (a plain POST route on this same app).
+  app.use(requestLogging);
 
   // Liveness: process is up.
   app.get("/healthz", (_req, res) => res.json({ ok: true }));

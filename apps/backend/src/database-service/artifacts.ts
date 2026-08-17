@@ -7,6 +7,8 @@ import { recordAccessEvent } from "./accessEvents";
 import { findUsersByEmails } from "./adminUsers";
 import { findGroupsByNames } from "./groups";
 import { getPresignedUploadUrl, headObject } from "../storage/s3";
+import { enqueueOutboxEvent, type EnqueueOutboxEventInput } from "./outbox";
+import { buildPublishNotificationEvents } from "./artifactRecipients";
 
 const withPolicyJoins = Prisma.validator<Prisma.ArtifactDefaultArgs>()({
   include: {
@@ -239,11 +241,12 @@ export interface UpdateArtifactPolicyInput {
 export async function updateArtifactPolicy(
   artifactId: string,
   input: UpdateArtifactPolicyInput,
+  notificationEvents: EnqueueOutboxEventInput[] = [],
 ): Promise<void> {
-  await prisma.$transaction([
-    prisma.artifactAllowedUser.deleteMany({ where: { artifactId } }),
-    prisma.artifactAllowedGroup.deleteMany({ where: { artifactId } }),
-    prisma.artifact.update({
+  await prisma.$transaction(async (tx) => {
+    await tx.artifactAllowedUser.deleteMany({ where: { artifactId } });
+    await tx.artifactAllowedGroup.deleteMany({ where: { artifactId } });
+    await tx.artifact.update({
       where: { id: artifactId },
       data: {
         audienceType: input.audienceType,
@@ -252,14 +255,17 @@ export async function updateArtifactPolicy(
         policyUpdatedAt: new Date(),
         policyUpdatedById: input.updatedById,
       },
-    }),
-    ...input.allowedUserIds.map((userId) =>
-      prisma.artifactAllowedUser.create({ data: { artifactId, userId } }),
-    ),
-    ...input.allowedGroupIds.map((groupId) =>
-      prisma.artifactAllowedGroup.create({ data: { artifactId, groupId } }),
-    ),
-  ]);
+    });
+    for (const userId of input.allowedUserIds) {
+      await tx.artifactAllowedUser.create({ data: { artifactId, userId } });
+    }
+    for (const groupId of input.allowedGroupIds) {
+      await tx.artifactAllowedGroup.create({ data: { artifactId, groupId } });
+    }
+    for (const event of notificationEvents) {
+      await enqueueOutboxEvent(event, tx);
+    }
+  });
 }
 
 /**
@@ -268,10 +274,19 @@ export async function updateArtifactPolicy(
  * than destroyed. Independent of `expiresAt`/`isExpired` (03 §1a) so the UI can tell "you revoked
  * this" apart from "its expiry window ran out on its own".
  */
-export async function revokeArtifactAccess(artifactId: string, revokedById: string): Promise<void> {
-  await prisma.artifact.update({
-    where: { id: artifactId },
-    data: { revoked: true, policyUpdatedAt: new Date(), policyUpdatedById: revokedById },
+export async function revokeArtifactAccess(
+  artifactId: string,
+  revokedById: string,
+  notificationEvents: EnqueueOutboxEventInput[] = [],
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.artifact.update({
+      where: { id: artifactId },
+      data: { revoked: true, policyUpdatedAt: new Date(), policyUpdatedById: revokedById },
+    });
+    for (const event of notificationEvents) {
+      await enqueueOutboxEvent(event, tx);
+    }
   });
 }
 
@@ -398,27 +413,38 @@ export async function createArtifactPending(
   const id = randomUUID();
   const storageKey = `artifacts/${id}/${sanitizeKeySegment(input.fileName)}`;
 
-  await prisma.artifact.create({
-    data: {
-      id,
-      ownerId,
-      title: input.title,
-      description: input.description,
-      fileName: input.fileName,
-      contentType: input.contentType,
-      storageKey,
-      sizeBytes: BigInt(0),
-      kind: input.kind ?? "other",
-      sourceTool: input.sourceTool,
-      format: input.format,
-      language: input.language,
-      metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
-      audienceType: input.audienceType,
-      expiresAt: input.expiresAt,
-      policyUpdatedById: ownerId,
-      allowedUsers: { create: input.allowedUserIds.map((userId) => ({ userId })) },
-      allowedGroups: { create: input.allowedGroupIds.map((groupId) => ({ groupId })) },
-    },
+  const notificationEvents = await buildPublishNotificationEvents(id, ownerId, {
+    audienceType: input.audienceType,
+    allowedUserIds: input.allowedUserIds,
+    allowedGroupIds: input.allowedGroupIds,
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.artifact.create({
+      data: {
+        id,
+        ownerId,
+        title: input.title,
+        description: input.description,
+        fileName: input.fileName,
+        contentType: input.contentType,
+        storageKey,
+        sizeBytes: BigInt(0),
+        kind: input.kind ?? "other",
+        sourceTool: input.sourceTool,
+        format: input.format,
+        language: input.language,
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+        audienceType: input.audienceType,
+        expiresAt: input.expiresAt,
+        policyUpdatedById: ownerId,
+        allowedUsers: { create: input.allowedUserIds.map((userId) => ({ userId })) },
+        allowedGroups: { create: input.allowedGroupIds.map((groupId) => ({ groupId })) },
+      },
+    });
+    for (const event of notificationEvents) {
+      await enqueueOutboxEvent(event, tx);
+    }
   });
 
   if (input.tags?.length) {

@@ -26,6 +26,7 @@ import {
   toSummary,
   updateArtifactPolicy,
 } from "../../../database-service/artifacts";
+import { buildAccessRevokedOutboxEvents, buildNewAccessOutboxEvents } from "../../../database-service/artifactRecipients";
 import { createComment, listComments } from "../../../database-service/comments";
 import { recordAdminAuditLog } from "../../../database-service/adminAuditLog";
 import { createShareLink } from "../../../database-service/shareLinks";
@@ -158,7 +159,7 @@ export function createArtifactsRouter(): Router {
       return;
     }
 
-    const comment = await createComment(artifact.id, viewer.id, body.data.body);
+    const comment = await createComment(artifact.id, viewer.id, body.data.body, artifact.ownerId);
     res.status(201).json(CommentView.parse(comment));
   });
 
@@ -203,13 +204,23 @@ export function createArtifactsRouter(): Router {
     // narrow a policy into non-access (03 §4), same as picking a past expiry always was.
     const expiresAt = computeExpiresAt(body.data.expiry, artifact.createdAt);
 
-    await updateArtifactPolicy(artifact.id, {
-      audienceType: resolved.audienceType,
-      expiresAt,
-      allowedUserIds: resolved.allowedUserIds,
-      allowedGroupIds: resolved.allowedGroupIds,
-      updatedById: viewer.id,
-    });
+    const newAccessOutboxEvents = await buildNewAccessOutboxEvents(
+      { id: artifact.id, ownerId: artifact.ownerId },
+      before,
+      { audienceType: resolved.audienceType, allowedUserIds: resolved.allowedUserIds, allowedGroupIds: resolved.allowedGroupIds },
+    );
+
+    await updateArtifactPolicy(
+      artifact.id,
+      {
+        audienceType: resolved.audienceType,
+        expiresAt,
+        allowedUserIds: resolved.allowedUserIds,
+        allowedGroupIds: resolved.allowedGroupIds,
+        updatedById: viewer.id,
+      },
+      newAccessOutboxEvents,
+    );
 
     await recordAdminAuditLog({
       actorId: viewer.id,
@@ -226,6 +237,10 @@ export function createArtifactsRouter(): Router {
         },
       },
     });
+    req.log.info(
+      { userId: viewer.id, artifactId: artifact.id, newAccessCount: newAccessOutboxEvents.length },
+      "policy.update",
+    );
 
     const updated = await findArtifactForDetail(artifact.id);
     res.json(ArtifactDetail.parse(toDetail(updated!, viewer.id, now)));
@@ -254,7 +269,11 @@ export function createArtifactsRouter(): Router {
       return;
     }
 
-    await revokeArtifactAccess(artifact.id, viewer.id);
+    const outboxEvents = await buildAccessRevokedOutboxEvents(
+      { id: artifact.id, ownerId: artifact.ownerId },
+      toPolicy(artifact),
+    );
+    await revokeArtifactAccess(artifact.id, viewer.id, outboxEvents);
 
     await recordAdminAuditLog({
       actorId: viewer.id,
@@ -263,6 +282,10 @@ export function createArtifactsRouter(): Router {
       targetId: artifact.id,
       metadata: {},
     });
+    req.log.info(
+      { userId: viewer.id, artifactId: artifact.id, revokedCount: outboxEvents.length },
+      "policy.revoke",
+    );
 
     const updated = await findArtifactForDetail(artifact.id);
     res.json(ArtifactDetail.parse(toDetail(updated!, viewer.id, new Date())));
@@ -299,6 +322,7 @@ export function createArtifactsRouter(): Router {
       targetId: artifact.id,
       metadata: { shareLinkId: link.id },
     });
+    req.log.info({ userId: viewer.id, artifactId: artifact.id, shareLinkId: link.id }, "share_link.create");
 
     const url = new URL(`/s/${link.token}`, getEnv().APP_ORIGIN).toString();
     res.status(201).json(

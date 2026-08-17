@@ -80,6 +80,10 @@ export function createAdminRouter(): Router {
       targetId: params.data.id,
       metadata: { groupIds: body.data.groupIds },
     });
+    req.log.info(
+      { userId: req.viewer!.id, targetUserId: params.data.id, groupIds: body.data.groupIds },
+      "user.group_change",
+    );
 
     res.status(204).end();
   });
@@ -115,6 +119,10 @@ export function createAdminRouter(): Router {
       targetId: params.data.id,
       metadata: { before: before.role, after: body.data.role },
     });
+    req.log.info(
+      { userId: req.viewer!.id, targetUserId: params.data.id, before: before.role, after: body.data.role },
+      "role.change",
+    );
 
     res.status(204).end();
   });
@@ -144,6 +152,7 @@ export function createAdminRouter(): Router {
       targetType: "user",
       targetId: params.data.id,
     });
+    req.log.info({ userId: req.viewer!.id, targetUserId: params.data.id }, "user.disable");
 
     res.status(204).end();
   });
@@ -200,6 +209,10 @@ export function createAdminRouter(): Router {
       targetId: invitation.id,
       metadata: { email: invitation.email, role: invitation.role, groupIds: body.data.groupIds },
     });
+    req.log.info(
+      { userId: req.viewer!.id, invitationId: invitation.id, email: invitation.email },
+      "invite.create",
+    );
 
     res.status(201).json(InvitationView.parse(await toInvitationView(invitation)));
   });

@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import type { Logger } from "pino";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { requireAuth, type AuthenticatedViewer } from "../../auth/tokenValidation";
@@ -12,15 +13,16 @@ import { buildServerInstructions } from "./instructions";
  * stateless, so it scales behind fly-proxy across many machines — `sessionIdGenerator: undefined`
  * in mountMcp below). Every handler closes over `viewer`, so there's no need to thread auth
  * through the SDK's own `AuthInfo`/`extra` plumbing — the viewer was already resolved by
- * `requireAuth("mcp")` before this is called.
+ * `requireAuth("mcp")` before this is called. `log` is the request's correlation-id-bearing child
+ * logger (docs/architecture/10 §1), echoed into each tool call.
  */
-export function createMcpServer(viewer: AuthenticatedViewer): McpServer {
+export function createMcpServer(viewer: AuthenticatedViewer, log: Logger): McpServer {
   const server = new McpServer(
     { name: "artifact-hub", version: "1.0.0" },
     { instructions: buildServerInstructions() },
   );
 
-  registerArtifactTools(server, viewer);
+  registerArtifactTools(server, viewer, log);
   registerArtifactResource(server, viewer);
   registerPrompts(server, viewer);
 
@@ -38,7 +40,7 @@ export function createMcpServer(viewer: AuthenticatedViewer): McpServer {
 export function mountMcp(app: Express): void {
   app.post("/mcp", requireAuth("mcp"), async (req, res) => {
     const viewer = req.viewer!;
-    const server = createMcpServer(viewer);
+    const server = createMcpServer(viewer, req.log);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
     res.on("close", () => {

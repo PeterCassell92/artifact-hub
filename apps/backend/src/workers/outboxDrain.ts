@@ -1,5 +1,6 @@
 import type { OutboxEvent } from "@prisma/client";
 import { prisma } from "../db";
+import { getEnv } from "../env";
 import { logger } from "../logger";
 
 export type OutboxHandler = (payload: Record<string, unknown>) => Promise<void>;
@@ -50,7 +51,13 @@ export async function drainOutboxOnce(handlers: Record<string, OutboxHandler>, b
       });
     } catch (err) {
       const { status, attempts } = nextAttemptState(event.attempts);
-      logger.error({ err, outboxEventId: event.id, type: event.type, attempts, status }, "outbox event failed");
+      // smtpHost is included even for non-email event types — cheap, static context that makes an
+      // email-configuration issue (e.g. still pointing at MailCatcher's default in prod)
+      // diagnosable straight from this log line instead of a guess-and-check.
+      logger.error(
+        { err, outboxEventId: event.id, type: event.type, attempts, status, smtpHost: getEnv().SMTP_HOST },
+        "outbox event failed",
+      );
       await prisma.outboxEvent.update({ where: { id: event.id }, data: { status, attempts } });
     }
   }

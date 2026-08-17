@@ -1,5 +1,7 @@
 import { getEnv } from "../../env";
 import { sendMail } from "../../adapters/email/mailer";
+import { buildInvitationEmail } from "../../adapters/email/templates/invitationEmail";
+import { logger } from "../../logger";
 import type { OutboxHandler } from "../outboxDrain";
 
 interface InvitationSendPayload extends Record<string, unknown> {
@@ -17,10 +19,6 @@ export const sendInvitationEmail: OutboxHandler = async (payload) => {
     throw new Error("invitation.send payload missing email/token");
   }
   const acceptUrl = `${getEnv().APP_ORIGIN}/accept-invite?token=${payload.token}`;
-  await sendMail({
-    to: payload.email,
-    subject: "You've been invited to Artifact Hub",
-    text: `You've been invited to Artifact Hub. Accept your invitation: ${acceptUrl}`,
-    html: `<p>You've been invited to Artifact Hub.</p><p><a href="${acceptUrl}">Accept your invitation</a></p>`,
-  });
+  await sendMail({ to: payload.email, ...buildInvitationEmail({ acceptUrl }) });
+  logger.info({ recipientEmail: payload.email }, "sent invitation email");
 };

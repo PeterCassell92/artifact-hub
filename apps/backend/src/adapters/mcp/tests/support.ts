@@ -4,6 +4,7 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { getEnv } from "#env";
+import { logger } from "#logger";
 import { startTestDatabase, type TestDatabase } from "../../../test-support/testDatabase";
 
 /**
@@ -51,7 +52,7 @@ export async function setupMcpTestContext(): Promise<McpTestContext> {
     }
     const memberships = await prisma.groupMembership.findMany({ where: { userId: user.id } });
     const viewer = { id: user.id, status: user.status, role: user.role, groupIds: memberships.map((m) => m.groupId) };
-    const server = createMcpServer(viewer);
+    const server = createMcpServer(viewer, logger);
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "test-client", version: "1.0.0" });
     await server.connect(serverTransport);

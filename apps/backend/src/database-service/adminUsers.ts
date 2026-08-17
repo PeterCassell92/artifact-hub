@@ -30,6 +30,28 @@ export function findUsersByEmails(emails: string[]): Promise<User[]> {
   return prisma.user.findMany({ where: { email: { in: emails } } });
 }
 
+/** Active users by id — the `specific_users` branch of resolving a policy to concrete recipients
+ * (database-service/artifactRecipients.ts). */
+export function findUsersByIds(ids: string[]): Promise<User[]> {
+  return prisma.user.findMany({ where: { id: { in: ids }, status: "active" } });
+}
+
+/** Reverse of the usual user -> groups direction (e.g. `Viewer.groupIds`): active users belonging
+ * to any of the given groups — the `user_groups` branch of resolving a policy to concrete
+ * recipients (database-service/artifactRecipients.ts). `findMany` with `some` naturally dedupes a
+ * user who qualifies via more than one group. */
+export function findUsersInGroups(groupIds: string[]): Promise<User[]> {
+  return prisma.user.findMany({
+    where: { status: "active", memberships: { some: { groupId: { in: groupIds } } } },
+  });
+}
+
+/** Every active user — the `public_authenticated` branch of resolving a policy to concrete
+ * recipients (database-service/artifactRecipients.ts). */
+export function listActiveUsers(): Promise<User[]> {
+  return prisma.user.findMany({ where: { status: "active" } });
+}
+
 /**
  * Guards the "last remaining admin" lock-out (docs/architecture/02 §7): false means the given
  * user is the sole active admin, so demoting/disabling them must be refused.

@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Logger } from "pino";
 import type { AuthenticatedViewer } from "../../auth/tokenValidation";
 import { canCreateShareLink, canManagePolicy, canView } from "../../core/authz";
 import { computeExpiresAt } from "../../core/policy";
@@ -15,6 +16,7 @@ import {
   toSummary,
   updateArtifactPolicy,
 } from "../../database-service/artifacts";
+import { buildAccessRevokedOutboxEvents, buildNewAccessOutboxEvents } from "../../database-service/artifactRecipients";
 import { createComment } from "../../database-service/comments";
 import { recordAdminAuditLog } from "../../database-service/adminAuditLog";
 import { createShareLink } from "../../database-service/shareLinks";
@@ -145,11 +147,28 @@ Example: list_groups({}).`;
 /** Registers the v1 tool surface (docs/architecture/05 §4) on a per-request server, closing over
  * the already-authenticated `viewer` so every handler authorizes as that caller — no admin tools
  * (R3): invite/promote/demote/disable/group-management stay `/api/admin/*`-only. */
-export function registerArtifactTools(server: McpServer, viewer: AuthenticatedViewer): void {
+export function registerArtifactTools(server: McpServer, viewer: AuthenticatedViewer, log: Logger): void {
+  /** One `"mcp tool call"` log line per invocation (docs/architecture/10 §1), correlated via `log`
+   * (the request's child logger, threaded from mountMcp) with `tool`/`status`/`latencyMs` —
+   * applied once here rather than bespoke per tool. */
+  function wrap<A extends unknown[], R>(tool: string, fn: (...args: A) => Promise<R>) {
+    return async (...args: A): Promise<R> => {
+      const start = Date.now();
+      try {
+        const result = await fn(...args);
+        log.info({ tool, status: "ok", latencyMs: Date.now() - start }, "mcp tool call");
+        return result;
+      } catch (err) {
+        log.error({ err, tool, status: "error", latencyMs: Date.now() - start }, "mcp tool call failed");
+        throw err;
+      }
+    };
+  }
+
   server.registerTool(
     "publish_artifact",
     { title: "Publish artifact", description: PUBLISH_ARTIFACT_DESCRIPTION, inputSchema: PublishArtifactInput },
-    async (args) => {
+    wrap("publish_artifact", async (args) => {
       if (!isValidPublishArtifactInput(args)) {
         return toolError(
           "Provide title, fileName, contentType, audience, and expiry to start a publish, or bytesRef (from a prior call) to finish one.",
@@ -204,17 +223,17 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
         { artifactId: artifact.id, resourceUri: `artifact://${artifact.id}`, uploadUrl, bytesRef: artifact.id },
         `Created pending artifact ${artifact.id}. PUT the file to uploadUrl, then call publish_artifact again with bytesRef="${artifact.id}" to finish.`,
       );
-    },
+    }),
   );
 
   server.registerTool(
     "list_artifacts",
     { title: "List my artifacts", description: LIST_ARTIFACTS_DESCRIPTION, inputSchema: ListArtifactsInput },
-    async (args) => {
+    wrap("list_artifacts", async (args) => {
       const { items, nextCursor } = await listOwnedArtifacts(viewer.id, { limit: args.limit, cursor: args.cursor });
       const summaries = items.map((a) => toSummary(a, new Date()));
       return toolJson({ items: summaries, nextCursor }, ownedArtifactsTable(summaries));
-    },
+    }),
   );
 
   server.registerTool(
@@ -224,7 +243,7 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       description: LIST_SHARED_WITH_ME_DESCRIPTION,
       inputSchema: ListSharedWithMeInput,
     },
-    async (args) => {
+    wrap("list_shared_with_me", async (args) => {
       const { items, nextCursor } = await listSharedWithMe(viewer, {
         sinceHours: args.sinceHours,
         cursor: args.cursor,
@@ -232,13 +251,13 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       });
       const summaries = items.map((a) => toSummary(a, new Date()));
       return toolJson({ items: summaries, nextCursor }, sharedWithMeTable(summaries));
-    },
+    }),
   );
 
   server.registerTool(
     "get_artifact",
     { title: "Get artifact content", description: GET_ARTIFACT_DESCRIPTION, inputSchema: GetArtifactInput },
-    async (args) => {
+    wrap("get_artifact", async (args) => {
       const artifact = await findArtifactForDetail(args.id);
       if (!artifact) return toolError("Artifact not found.");
 
@@ -276,7 +295,7 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
           : { uri: `artifact://${artifact.id}`, mimeType: artifact.contentType, blob: buffer.toString("base64") };
 
       return { content: [{ type: "resource" as const, resource }] };
-    },
+    }),
   );
 
   server.registerTool(
@@ -286,22 +305,22 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       description: COMMENT_ON_ARTIFACT_DESCRIPTION,
       inputSchema: CommentOnArtifactInput,
     },
-    async (args) => {
+    wrap("comment_on_artifact", async (args) => {
       const artifact = await findArtifactForDetail(args.id);
       if (!artifact) return toolError("Artifact not found.");
 
       const decision = canView(viewer, toPolicy(artifact), new Date());
       if (!decision.allowed) return toolError(`Access denied (${decision.reason}).`);
 
-      const comment = await createComment(artifact.id, viewer.id, args.body);
+      const comment = await createComment(artifact.id, viewer.id, args.body, artifact.ownerId);
       return toolJson({ commentId: comment.id, createdAt: comment.createdAt });
-    },
+    }),
   );
 
   server.registerTool(
     "create_share_link",
     { title: "Create share link", description: CREATE_SHARE_LINK_DESCRIPTION, inputSchema: CreateShareLinkInput },
-    async (args) => {
+    wrap("create_share_link", async (args) => {
       const artifact = await findArtifactForDetail(args.id);
       if (!artifact) return toolError("Artifact not found.");
 
@@ -317,16 +336,17 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
         targetId: artifact.id,
         metadata: { shareLinkId: link.id },
       });
+      log.info({ userId: viewer.id, artifactId: artifact.id, shareLinkId: link.id }, "share_link.create");
 
       const url = new URL(`/s/${link.token}`, getEnv().APP_ORIGIN).toString();
       return toolJson({ url });
-    },
+    }),
   );
 
   server.registerTool(
     "set_access_policy",
     { title: "Set access policy", description: SET_ACCESS_POLICY_DESCRIPTION, inputSchema: SetAccessPolicyInput },
-    async (args) => {
+    wrap("set_access_policy", async (args) => {
       const artifact = await findArtifactForDetail(args.id);
       if (!artifact) return toolError("Artifact not found.");
 
@@ -348,13 +368,23 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       // narrow into non-access (03 §4).
       const expiresAt = computeExpiresAt(args.expiry, artifact.createdAt);
 
-      await updateArtifactPolicy(artifact.id, {
-        audienceType: resolved.audienceType,
-        expiresAt,
-        allowedUserIds: resolved.allowedUserIds,
-        allowedGroupIds: resolved.allowedGroupIds,
-        updatedById: viewer.id,
-      });
+      const newAccessOutboxEvents = await buildNewAccessOutboxEvents(
+        { id: artifact.id, ownerId: artifact.ownerId },
+        before,
+        { audienceType: resolved.audienceType, allowedUserIds: resolved.allowedUserIds, allowedGroupIds: resolved.allowedGroupIds },
+      );
+
+      await updateArtifactPolicy(
+        artifact.id,
+        {
+          audienceType: resolved.audienceType,
+          expiresAt,
+          allowedUserIds: resolved.allowedUserIds,
+          allowedGroupIds: resolved.allowedGroupIds,
+          updatedById: viewer.id,
+        },
+        newAccessOutboxEvents,
+      );
 
       await recordAdminAuditLog({
         actorId: viewer.id,
@@ -371,15 +401,19 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
           },
         },
       });
+      log.info(
+        { userId: viewer.id, artifactId: artifact.id, newAccessCount: newAccessOutboxEvents.length },
+        "policy.update",
+      );
 
       return toolJson({ ok: true, effectiveFrom: now.toISOString() });
-    },
+    }),
   );
 
   server.registerTool(
     "revoke_access",
     { title: "Revoke access", description: REVOKE_ACCESS_DESCRIPTION, inputSchema: RevokeAccessInput },
-    async (args) => {
+    wrap("revoke_access", async (args) => {
       const artifact = await findArtifactForDetail(args.id);
       if (!artifact) return toolError("Artifact not found.");
 
@@ -387,7 +421,11 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
         return toolError("Only the owner can revoke this artifact's access.");
       }
 
-      await revokeArtifactAccess(artifact.id, viewer.id);
+      const outboxEvents = await buildAccessRevokedOutboxEvents(
+        { id: artifact.id, ownerId: artifact.ownerId },
+        toPolicy(artifact),
+      );
+      await revokeArtifactAccess(artifact.id, viewer.id, outboxEvents);
       await recordAdminAuditLog({
         actorId: viewer.id,
         action: "policy.revoke",
@@ -395,29 +433,33 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
         targetId: artifact.id,
         metadata: {},
       });
+      log.info(
+        { userId: viewer.id, artifactId: artifact.id, revokedCount: outboxEvents.length },
+        "policy.revoke",
+      );
 
       return toolJson({ ok: true, revokedAt: new Date().toISOString() });
-    },
+    }),
   );
 
   server.registerTool(
     "get_user_details",
     { title: "Get user details", description: GET_USER_DETAILS_DESCRIPTION, inputSchema: GetUserDetailsInput },
-    async () => {
+    wrap("get_user_details", async () => {
       const user = await findUserWithGroupsById(viewer.id);
       if (!user) return toolError("User not found.");
 
       const { email, name, role, groupNames } = toUserView(user);
       return toolJson({ email, name, role, groupNames });
-    },
+    }),
   );
 
   server.registerTool(
     "list_groups",
     { title: "List groups", description: LIST_GROUPS_DESCRIPTION, inputSchema: ListGroupsInput },
-    async () => {
+    wrap("list_groups", async () => {
       const groups = (await listGroups()).map(toGroupView).map(({ name, description }) => ({ name, description }));
       return toolJson({ groups }, groupsTable(groups));
-    },
+    }),
   );
 }

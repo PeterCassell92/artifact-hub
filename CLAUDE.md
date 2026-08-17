@@ -190,3 +190,6 @@ form feedback. This keeps every notification a queryable DOM node with no timing
   re-implement access checks.
 - Read role/group from the **database**, never trust token claims for authorization.
 - Keep request/response types in `packages/contracts` so both apps type-check against one contract.
+- When writing/editing a domain mutation, external call, or auth/authz decision, add structured
+  `logger`/`req.log` calls (`requestId`, `userId`, `route`/`tool`, `status`, `latencyMs`; never
+  tokens/file bytes/PII beyond `userId`/email) — see [10](docs/architecture/10-observability.md) §1.

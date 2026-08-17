@@ -52,6 +52,7 @@ export function createInvitationsPublicRouter(): Router {
       targetId: invitation.id,
       metadata: { userId: user.id, email: user.email, role: user.role, groupIds: invitation.groupIds },
     });
+    req.log.info({ userId: user.id, invitationId: invitation.id }, "invitation.accept");
 
     res.status(204).end();
   });
