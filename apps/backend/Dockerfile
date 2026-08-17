@@ -8,10 +8,14 @@ FROM node:24-slim AS build
 WORKDIR /repo
 RUN corepack enable
 
-# Manifests first for better layer caching
+# Manifests first for better layer caching. All workspaces' package.json must be present (even
+# frontend's, which this image never builds) — the root workspaces glob is "apps/*", and `yarn
+# install --immutable` validates the full workspace set against yarn.lock, not just the ones we
+# COPY sources for below.
 COPY package.json yarn.lock .yarnrc.yml tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/
 COPY apps/backend/package.json apps/backend/
+COPY apps/frontend/package.json apps/frontend/
 RUN yarn install --immutable
 
 # Sources
