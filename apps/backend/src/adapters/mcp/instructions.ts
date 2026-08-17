@@ -8,7 +8,7 @@ import { getEnv } from "../../env";
 export function buildServerInstructions(): string {
   const appOrigin = getEnv().APP_ORIGIN;
 
-  return `Artifact Hub is a platform for publishing and sharing AI-generated files (PDF, HTML, images, docx, Markdown, Mermaid diagrams) with revocable, owner-controlled access. Publish an artifact via this MCP server's "publish_artifact" tool, or point the user at the companion web app's "Publish New Artifact" button on their Dashboard — either path works; this tool is the only one that can set rich metadata (kind, tags, sourceTool, format, language) at creation time.
+  return `Artifact Hub is a platform for publishing and sharing AI-generated files (PDF, HTML, images, docx, Markdown, Mermaid diagrams) with revocable, owner-controlled access. Publish an artifact via this MCP server's "publish_artifact" tool, or point the user at the companion web app's "Publish New Artifact" button on their Dashboard — either path works and both set kind/tags/language; this tool alone can set a real sourceTool string and any language code (the UI fixes sourceTool to "frontendSPA" and offers only a dropdown of common languages).
 
 Publishing:
 - Use "publish_artifact" to publish a new artifact and set its access policy (audience + expiry) in one call.
@@ -28,6 +28,7 @@ Collaborating:
 Relationships between artifacts:
 - Pass "relationships" directly to "publish_artifact" to link a brand-new artifact to ones that already exist (e.g. "this is the compiled output of the diagram I published earlier" -> derived_from), or use "link_artifacts" afterward once the connection becomes clear. Types: supersedes | derived_from | related_to.
 - "list_artifact_relationships" reads back everything linked to an artifact, either direction. A relationship can be visible even when the artifact on its far end isn't — that side comes back redacted (otherArtifact: null), never leaked.
+- "unlink_artifacts" removes a relationship by its id (from list_artifact_relationships/link_artifacts) — owner of the fromId side only, same rule as creating it. There's no in-place edit: to change a relationship's type or note, unlink then link_artifacts again.
 
 Managing access:
 - "set_access_policy" (owner only) changes an owned artifact's audience/expiry — narrowing it is the general way access is revoked. Expiry buckets (24h/7d/30d) are relative to when the artifact was PUBLISHED, not to whenever this tool happens to be called — so picking one can land in the past if it's been a while since publish, which immediately denies everyone but the owner (that's expected, not an error).

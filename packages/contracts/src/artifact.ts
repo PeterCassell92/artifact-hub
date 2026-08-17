@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ArtifactRelationshipInput, ArtifactRelationshipLinkResult } from "./collaboration";
 import { ArtifactKind, AudienceType, ExpiryOption } from "./enums";
 import { paginated } from "./common";
 
@@ -38,7 +39,6 @@ export const ArtifactMetadataInput = z.object({
   kind: ArtifactKind.optional(),
   tags: z.array(z.string().min(1)).optional(),
   sourceTool: z.string().optional(),
-  format: z.string().optional(),
   language: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -58,6 +58,10 @@ export const CreateArtifactInput = AudiencePolicyFields.extend({
   description: z.string().optional(),
   fileName: z.string().min(1),
   contentType: z.string().min(1),
+  /** Links to already-existing artifacts, created right after this one — same optional
+   * enrichment as the MCP `publish_artifact` tool's `relationships` (05 §4). A bad `toId` is
+   * reported per-entry in the response's `relationshipResults`, never fails the publish. */
+  relationships: z.array(ArtifactRelationshipInput).optional(),
 }).merge(ArtifactMetadataInput);
 export type CreateArtifactInput = z.infer<typeof CreateArtifactInput>;
 
@@ -65,6 +69,7 @@ export type CreateArtifactInput = z.infer<typeof CreateArtifactInput>;
 export const CreateArtifactResponse = z.object({
   artifactId: z.string().uuid(),
   uploadUrl: z.string().url(),
+  relationshipResults: z.array(ArtifactRelationshipLinkResult).optional(),
 });
 export type CreateArtifactResponse = z.infer<typeof CreateArtifactResponse>;
 
@@ -82,9 +87,6 @@ export const ArtifactSummary = z.object({
   fileName: z.string(),
   contentType: z.string(),
   kind: ArtifactKind,
-  /** Format detail, e.g. "mermaid"/"markdown"/"png" (docs/models/artifact.md §2) — falls back to
-   * `kind` for display when unset (e.g. MCP list tables, docs/architecture/05 §4). */
-  format: z.string().nullable(),
   sizeBytes: z.number().int().nonnegative(),
   publisherName: z.string(),
   publishedAt: z.string().datetime(),

@@ -148,6 +148,7 @@ describe("POST /mcp (HTTP black-box)", () => {
         "publish_artifact",
         "revoke_access",
         "set_access_policy",
+        "unlink_artifacts",
       ].sort(),
     );
   });

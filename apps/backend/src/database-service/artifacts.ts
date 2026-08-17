@@ -49,7 +49,6 @@ export function toSummary(artifact: ArtifactWithPolicyJoins, now: Date): Artifac
     fileName: artifact.fileName,
     contentType: artifact.contentType,
     kind: artifact.kind,
-    format: artifact.format,
     sizeBytes: Number(artifact.sizeBytes),
     publisherName: artifact.owner.name,
     publishedAt: artifact.createdAt.toISOString(),
@@ -383,7 +382,6 @@ export interface CreateArtifactPendingInput {
   kind?: ArtifactKind;
   tags?: string[];
   sourceTool?: string;
-  format?: string;
   language?: string;
   metadata?: Record<string, unknown>;
   audienceType: AudienceType;
@@ -429,7 +427,6 @@ export async function createArtifactPending(
         sizeBytes: BigInt(0),
         kind: input.kind ?? "other",
         sourceTool: input.sourceTool,
-        format: input.format,
         language: input.language,
         metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
         audienceType: input.audienceType,

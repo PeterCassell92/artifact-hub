@@ -1,7 +1,6 @@
 /** Small display helpers for MCP list-tool markdown tables (docs/architecture/05 §4). */
 
 interface TypedRow {
-  format: string | null;
   kind: string;
   fileName: string;
 }
@@ -13,8 +12,7 @@ function fileExtension(fileName: string): string {
 
 function typeLabel(row: TypedRow): string {
   const ext = fileExtension(row.fileName);
-  const base = row.format ?? row.kind;
-  return ext ? `${base} (${ext})` : base;
+  return ext ? `${row.kind} (${ext})` : row.kind;
 }
 
 interface SharedRow extends TypedRow {

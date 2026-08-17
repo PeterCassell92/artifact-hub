@@ -19,11 +19,24 @@ backend (Express) serves both `/api/*` and `/mcp` over a shared `core` domain la
 - **Passwordless auth (magic link)** — all users incl. admins sign in via emailed magic link; no
   passwords, no password reset. See [02](docs/architecture/02-auth-identity-and-admin.md).
 - **Publishing is available two ways** — via an agent (`publish_artifact`, MCP) or via the SPA's
-  Dashboard ("Publish New Artifact", a two-step modal: pick a file, then set its access policy).
-  Both paths converge on the same `core` create+finalize logic; the UI path always names the
-  artifact after the file (no title-edit surface) and reuses the same audience/expiry fields —
-  including the "Specific people" **combo box of real users, never free text** — as the artifact
-  detail page's policy editor. See [frontend/](docs/frontend/).
+  Dashboard ("Publish New Artifact", a three-step modal: pick a file, set its metadata, then set
+  its access policy). Both paths converge on the same `core` create+finalize logic; the metadata
+  step (name, kind, tags, language, relationships) mirrors the same
+  `ArtifactMetadataInput`/`relationships` fields `publish_artifact` accepts, minus `sourceTool` —
+  the SPA path always sends `sourceTool: "frontendSPA"` itself (not user-editable; it's not a
+  choice a human publisher makes the way an agent identifies itself) — plus two SPA-only hygiene
+  behaviors: **File type is shown read-only** (derived from the chosen file, never a separate
+  input), and **Kind starts pre-filled from the file's extension/contentType**
+  (`lib/kindFromFile.ts`) but stays fully editable and never overrides a value the publisher
+  already picked. **Language is a fixed dropdown**, not free text, defaulting to `en`
+  (`lib/languages.ts`) — MCP callers can still pass any language code. There is no `format` field
+  at all (removed — never used; `kind` + file type + free-form `tags` cover the same ground). The
+  policy step reuses the same audience/expiry fields — including the "Specific people" **combo box
+  of real users, never free text** — as the artifact detail page's policy editor. See
+  [frontend/](docs/frontend/).
+- **Artifact relationships are editable from both surfaces** — `link_artifacts`/`unlink_artifacts`
+  (MCP) and add/remove controls on the artifact detail page (SPA), always owner-of-`fromId`-only.
+  No in-place edit; retract and re-link instead. See [models/collaboration.md](docs/models/collaboration.md).
 - **One owner-controlled access policy per artifact**, re-evaluated on every request → revocation
   is instant; **share links are pure locators**, never bearer tokens of access.
 - **The backend makes no LLM calls** — all logic is deterministic. Review summaries are an MCP

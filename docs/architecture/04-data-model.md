@@ -120,8 +120,6 @@ model Artifact {
   kind          ArtifactKind @default(other)
   sourceTool    String?                         // e.g. "Claude Desktop"
   sourcePlatform String?
-  format        String?                          // e.g. "mermaid", "markdown", "png"
-  formatMeta    Json         @default("{}")      // format-specific (page count, dims, diagram type)
   language      String?
   metadata      Json         @default("{}")      // free-form catch-all (JSONB)
 
@@ -274,8 +272,10 @@ model AccessEvent {                            // artifact ACCESS audit trail (s
   checks. `ShareLink.revoked` below is an optional convenience to retire one specific link; the
   artifact policy remains authoritative regardless of either.
 - **Rich artifact metadata.** Beyond `metadata` JSONB (free-form), we store faceted columns
-  (`kind`, `sourceTool`, `format`, `language`, …) plus `Tag`/`ArtifactTag`, because these drive
+  (`kind`, `sourceTool`, `language`, …) plus `Tag`/`ArtifactTag`, because these drive
   the frontend filters/search. Full catalogue: [`../models/artifact.md`](../models/artifact.md).
+  There is deliberately no `format`/`formatMeta` column (removed — never populated in practice;
+  `kind` + the derived file type + free-form `tags` cover the same ground without an extra field).
 - **`User.name` is required (NOT NULL), not optional.** Originally nullable; the `require_user_name`
   migration backfills any existing NULLs (derived from the email local-part, e.g.
   "peter.cassell@x.com" → "Peter Cassell") before adding the constraint — safe on real data, not

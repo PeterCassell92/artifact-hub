@@ -5,6 +5,8 @@ import type {
   ArtifactFacetOptions,
   ArtifactListQuery,
   ArtifactListResponse,
+  ArtifactRelationshipCreateResponse,
+  ArtifactRelationshipInput,
   ArtifactRelationshipSummary,
   ChangeRoleInput,
   CommentView,
@@ -111,6 +113,26 @@ export const api = createApi({
     getRelationships: builder.query<ArtifactRelationshipSummary[], string>({
       query: (artifactId) => `/artifacts/${artifactId}/relationships`,
       providesTags: (_result, _error, artifactId) => [{ type: "Relationship", id: artifactId }],
+    }),
+
+    createRelationship: builder.mutation<
+      ArtifactRelationshipCreateResponse,
+      { artifactId: string } & ArtifactRelationshipInput
+    >({
+      query: ({ artifactId, ...body }) => ({
+        url: `/artifacts/${artifactId}/relationships`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { artifactId }) => [{ type: "Relationship", id: artifactId }],
+    }),
+
+    deleteRelationship: builder.mutation<void, { artifactId: string; relationshipId: string }>({
+      query: ({ artifactId, relationshipId }) => ({
+        url: `/artifacts/${artifactId}/relationships/${relationshipId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_result, _error, { artifactId }) => [{ type: "Relationship", id: artifactId }],
     }),
 
     updatePolicy: builder.mutation<ArtifactDetail, { artifactId: string; policy: AccessPolicyInput }>({
@@ -230,6 +252,8 @@ export const {
   useGetCommentsQuery,
   useAddCommentMutation,
   useGetRelationshipsQuery,
+  useCreateRelationshipMutation,
+  useDeleteRelationshipMutation,
   useUpdatePolicyMutation,
   useRevokeAccessMutation,
   useCreateArtifactMutation,

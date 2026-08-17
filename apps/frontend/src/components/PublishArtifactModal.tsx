@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { AudienceType, ExpiryOption } from "contracts";
+import { ArtifactKind, type AudienceType, type ExpiryOption } from "contracts";
 import {
   useCreateArtifactMutation,
   useFinalizeArtifactMutation,
@@ -8,28 +8,52 @@ import {
 } from "../store/api";
 import { useAppDispatch } from "../store/hooks";
 import { notify } from "../store/slices/notifications";
-import { audiencePolicyMissing, formatBytes } from "../lib/formatters";
+import { audiencePolicyMissing, fileTypeLabel, formatBytes } from "../lib/formatters";
+import { inferKindFromFile } from "../lib/kindFromFile";
+import { DEFAULT_LANGUAGE } from "../lib/languages";
 import { AccessPolicyFields } from "./AccessPolicyFields";
 import { Modal } from "./Modal";
+import { PublishMetadataFields } from "./PublishMetadataFields";
+import type { RelationshipDraft } from "./RelationshipPicker";
 
 interface PublishArtifactModalProps {
   open: boolean;
   onClose: () => void;
 }
 
-type Step = "file" | "policy";
+type Step = "file" | "metadata" | "policy";
+
+const STEP_LABELS: Record<Step, string> = {
+  file: "Choose a file",
+  metadata: "Metadata",
+  policy: "Access policy",
+};
+const STEP_ORDER: Step[] = ["file", "metadata", "policy"];
+
+/** The SPA always identifies itself this way — not user-editable, unlike an MCP agent choosing
+ * its own `sourceTool` (e.g. "Claude Desktop") when it calls `publish_artifact` directly. */
+const SOURCE_TOOL = "frontendSPA";
 
 /**
  * "Publish New Artifact" (Dashboard) — the web-UI publish path, alongside the MCP
- * `publish_artifact` tool. A two-step stepper: pick a file, then set its access policy (title
- * defaults to the file's name — there's no title-edit surface yet, matching artifact editing
- * being out of scope for v1, arch/01 §8).
+ * `publish_artifact` tool. A three-step stepper: pick a file, set its metadata (name, kind, tags,
+ * language, relationships — the same fields `publish_artifact` accepts, minus `sourceTool`, which
+ * this path fixes to `SOURCE_TOOL` itself), then set its access policy.
  */
 export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProps) {
   const [step, setStep] = useState<Step>("file");
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<ArtifactKind>("other");
+  // Tracks whether the publisher has manually changed Kind, so a file re-pick (or the initial
+  // pick) can keep auto-suggesting from inferKindFromFile without ever clobbering their choice.
+  const [kindTouched, setKindTouched] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
+  const [relationships, setRelationships] = useState<RelationshipDraft[]>([]);
 
   const [audienceType, setAudienceType] = useState<AudienceType>("specific_users");
   const [userEmails, setUserEmails] = useState<string[]>([]);
@@ -48,6 +72,12 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
     setStep("file");
     setFile(null);
     setStatus("idle");
+    setTitle("");
+    setKind("other");
+    setKindTouched(false);
+    setTags([]);
+    setLanguage(DEFAULT_LANGUAGE);
+    setRelationships([]);
     setAudienceType("specific_users");
     setUserEmails([]);
     setGroupNames([]);
@@ -61,8 +91,17 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setFile(e.target.files?.[0] ?? null);
+    const selected = e.target.files?.[0] ?? null;
+    setFile(selected);
     setStatus("idle");
+    // Only default the name from the file the first time — never clobber a name the publisher
+    // already edited by re-choosing a file on this same visit to the step.
+    if (selected && !title) setTitle(selected.name);
+    // Same "don't clobber a deliberate choice" rule for Kind — only auto-suggest while the
+    // publisher hasn't touched the Kind field themselves (see `kindTouched`).
+    if (selected && !kindTouched) {
+      setKind(inferKindFromFile(selected.name, selected.type || "application/octet-stream"));
+    }
   }
 
   async function handlePublish() {
@@ -73,9 +112,16 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
     try {
       const contentType = file.type || "application/octet-stream";
       const created = await createArtifact({
-        title: file.name,
+        title: title || file.name,
         fileName: file.name,
         contentType,
+        kind,
+        tags: tags.length ? tags : undefined,
+        sourceTool: SOURCE_TOOL,
+        language,
+        relationships: relationships.length
+          ? relationships.map(({ toId, type, note }) => ({ toId, type, note }))
+          : undefined,
         audienceType,
         expiry,
         ...(audienceType === "specific_users" ? { userEmails } : {}),
@@ -91,7 +137,7 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
 
       await finalizeArtifact({ artifactId: created.artifactId }).unwrap();
 
-      dispatch(notify("success", `Published "${file.name}"`));
+      dispatch(notify("success", `Published "${title || file.name}"`));
       resetState();
       onClose();
     } catch {
@@ -99,6 +145,8 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
       dispatch(notify("error", "Failed to publish the file — try again"));
     }
   }
+
+  const stepIndex = STEP_ORDER.indexOf(step);
 
   return (
     <Modal
@@ -118,8 +166,25 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
             <button
               type="button"
               disabled={!file}
-              onClick={() => setStep("policy")}
+              onClick={() => setStep("metadata")}
               className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </>
+        ) : step === "metadata" ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setStep("file")}
+              className="rounded-md px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep("policy")}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
             >
               Next
             </button>
@@ -128,7 +193,7 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
           <>
             <button
               type="button"
-              onClick={() => setStep("file")}
+              onClick={() => setStep("metadata")}
               className="rounded-md px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
             >
               Back
@@ -146,10 +211,10 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
       }
     >
       <p className="mb-3 text-xs font-medium uppercase tracking-wide text-neutral-400">
-        Step {step === "file" ? "1" : "2"} of 2 — {step === "file" ? "Choose a file" : "Access policy"}
+        Step {stepIndex + 1} of {STEP_ORDER.length} — {STEP_LABELS[step]}
       </p>
 
-      {step === "file" ? (
+      {step === "file" && (
         <>
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
 
@@ -178,7 +243,28 @@ export function PublishArtifactModal({ open, onClose }: PublishArtifactModalProp
             </div>
           )}
         </>
-      ) : (
+      )}
+
+      {step === "metadata" && (
+        <PublishMetadataFields
+          title={title}
+          onTitleChange={setTitle}
+          fileType={file ? fileTypeLabel({ fileName: file.name, contentType: file.type || "application/octet-stream" }) : ""}
+          kind={kind}
+          onKindChange={(value) => {
+            setKind(value);
+            setKindTouched(true);
+          }}
+          tags={tags}
+          onTagsChange={setTags}
+          language={language}
+          onLanguageChange={setLanguage}
+          relationships={relationships}
+          onRelationshipsChange={setRelationships}
+        />
+      )}
+
+      {step === "policy" && (
         <AccessPolicyFields
           audienceType={audienceType}
           onAudienceTypeChange={setAudienceType}

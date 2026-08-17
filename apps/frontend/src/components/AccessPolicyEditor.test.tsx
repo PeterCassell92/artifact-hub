@@ -36,7 +36,6 @@ const artifact: ArtifactDetail = {
   fileName: "report.pdf",
   contentType: "application/pdf",
   kind: "report",
-  format: null,
   sizeBytes: 1024,
   publisherName: "Ada",
   publishedAt: "2026-01-01T00:00:00.000Z",

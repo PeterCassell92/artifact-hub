@@ -67,3 +67,17 @@ export const ArtifactRelationshipCreateResponse = z.object({
   createdAt: z.string().datetime(),
 });
 export type ArtifactRelationshipCreateResponse = z.infer<typeof ArtifactRelationshipCreateResponse>;
+
+/** Per-entry outcome of linking one relationship — used when several are requested at once
+ * (`publish_artifact`'s `relationships`, `POST /api/artifacts`'s `relationships`) so a bad `toId`
+ * is reported rather than silently dropped or failing the whole request. */
+export const ArtifactRelationshipLinkResult = z.union([
+  z.object({ ok: z.literal(true), relationshipId: z.string().uuid(), createdAt: z.string().datetime() }),
+  z.object({
+    ok: z.literal(false),
+    toId: z.string().uuid(),
+    type: RelationType,
+    reason: z.enum(["self_link", "to_not_found", "to_not_viewable", "duplicate"]),
+  }),
+]);
+export type ArtifactRelationshipLinkResult = z.infer<typeof ArtifactRelationshipLinkResult>;

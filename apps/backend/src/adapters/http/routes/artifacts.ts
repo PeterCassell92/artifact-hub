@@ -37,7 +37,7 @@ import {
 import { buildAccessRevokedOutboxEvents, buildNewAccessOutboxEvents } from "../../../database-service/artifactRecipients";
 import { createComment, listComments } from "../../../database-service/comments";
 import { recordAdminAuditLog } from "../../../database-service/adminAuditLog";
-import { createRelationship, listRelationships } from "../../../database-service/relationships";
+import { createRelationship, createRelationships, deleteRelationship, listRelationships } from "../../../database-service/relationships";
 import { createShareLink } from "../../../database-service/shareLinks";
 import { getPresignedDownloadUrl } from "../../../storage/s3";
 import { getEnv } from "../../../env";
@@ -97,7 +97,6 @@ export function createArtifactsRouter(): Router {
       kind: body.data.kind,
       tags: body.data.tags,
       sourceTool: body.data.sourceTool,
-      format: body.data.format,
       language: body.data.language,
       metadata: body.data.metadata,
       audienceType: resolved.audienceType,
@@ -109,7 +108,22 @@ export function createArtifactsRouter(): Router {
       expiresAt: computeExpiresAt(body.data.expiry, new Date()),
     });
 
-    res.status(201).json(CreateArtifactResponse.parse({ artifactId: artifact.id, uploadUrl }));
+    // Optional enrichment, not a publish precondition — mirrors the MCP publish_artifact tool's
+    // relationships handling (docs/architecture/05 §4): a bad toId is reported per-entry below,
+    // never fails the artifact that was just successfully created.
+    const relationshipResults = body.data.relationships?.length
+      ? (await createRelationships(artifact.id, viewer, body.data.relationships)).map((r) =>
+          r.ok ? { ...r, createdAt: r.createdAt.toISOString() } : r,
+        )
+      : [];
+
+    res.status(201).json(
+      CreateArtifactResponse.parse({
+        artifactId: artifact.id,
+        uploadUrl,
+        ...(relationshipResults.length ? { relationshipResults } : {}),
+      }),
+    );
   });
 
   // GET /api/artifacts/facets — distinct filter values the caller can actually use, for
@@ -539,6 +553,32 @@ export function createArtifactsRouter(): Router {
         createdAt: result.createdAt.toISOString(),
       }),
     );
+  });
+
+  // DELETE /api/artifacts/:id/relationships/:relationshipId — retract a relationship. Ownership
+  // is resolved from the relationship's own `fromId` inside deleteRelationship (not from this
+  // route's `:id`, which is only here for the nested URL shape matching GET/POST above) — the
+  // `to` side's owner has no say, matching who could create it in the first place.
+  router.delete("/:id/relationships/:relationshipId", async (req, res) => {
+    const params = z
+      .object({ id: z.string().uuid(), relationshipId: z.string().uuid() })
+      .safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid id");
+      return;
+    }
+
+    const result = await deleteRelationship(params.data.relationshipId, req.viewer!);
+    if (!result.ok) {
+      if (result.reason === "not_found") {
+        sendError(res, 404, "not_found", "Relationship not found");
+        return;
+      }
+      sendError(res, 403, "forbidden", "Only the owner of the relationship's source artifact can remove it");
+      return;
+    }
+
+    res.status(204).send();
   });
 
   return router;

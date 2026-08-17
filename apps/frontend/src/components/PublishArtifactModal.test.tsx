@@ -5,6 +5,7 @@ import { Provider } from "react-redux";
 import type { ArtifactDetail, CreateArtifactResponse } from "contracts";
 import { makeStore } from "../store/store";
 import { NotificationRegion } from "./NotificationRegion";
+import type { RelationshipDraft } from "./RelationshipPicker";
 
 const createUnwrap = jest.fn<() => Promise<CreateArtifactResponse>>();
 const createArtifact = jest.fn(() => ({ unwrap: createUnwrap }));
@@ -17,6 +18,19 @@ jest.unstable_mockModule("../store/api", () => ({
   useFinalizeArtifactMutation: () => [finalizeArtifact, { isLoading: false }],
   useListGroupsQuery: () => ({ data: [] }),
   useListUsersQuery: () => ({ data: [{ id: "user-1", email: "reviewer@test.local", name: null }] }),
+}));
+
+// RelationshipPicker's own search/select behavior is covered by RelationshipPicker.test.tsx —
+// stub it here so these tests stay focused on the modal's own step navigation and submit payload.
+jest.unstable_mockModule("./RelationshipPicker", () => ({
+  RelationshipPicker: ({ onAdd }: { onAdd: (draft: RelationshipDraft) => void }) => (
+    <button
+      type="button"
+      onClick={() => onAdd({ toId: "artifact-9", toTitle: "Source diagram", type: "derived_from", note: "export" })}
+    >
+      Stub add relationship
+    </button>
+  ),
 }));
 
 const { PublishArtifactModal } = await import("./PublishArtifactModal");
@@ -41,9 +55,18 @@ function mockFetch(response: Partial<Response>) {
   return fetchMock;
 }
 
-async function selectFileAndAdvance(user: ReturnType<typeof userEvent.setup>, file: File) {
+async function selectFile(user: ReturnType<typeof userEvent.setup>, file: File) {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   await user.upload(input, file);
+}
+
+async function advanceToMetadata(user: ReturnType<typeof userEvent.setup>, file: File) {
+  await selectFile(user, file);
+  await user.click(screen.getByRole("button", { name: /next/i }));
+}
+
+async function advanceToPolicy(user: ReturnType<typeof userEvent.setup>, file: File) {
+  await advanceToMetadata(user, file);
   await user.click(screen.getByRole("button", { name: /next/i }));
 }
 
@@ -71,23 +94,81 @@ describe("PublishArtifactModal", () => {
     expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
   });
 
-  it("step 1: switches to the metadata view and enables Next once a file is selected", async () => {
+  it("step 1: shows the file preview and enables Next once a file is selected", async () => {
     renderModal();
     const user = userEvent.setup();
     const file = makeFile();
 
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    await user.upload(input, file);
+    await selectFile(user, file);
 
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
     expect(screen.getByText(/application\/pdf/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
   });
 
-  it("step 2: blocks Publish and shows inline feedback until an audience is actually set", async () => {
+  it("step 2 (metadata): pre-fills the name and an inferred kind from the file, and always allows Next", async () => {
     renderModal();
     const user = userEvent.setup();
-    await selectFileAndAdvance(user, makeFile());
+    await advanceToMetadata(user, makeFile());
+
+    expect(screen.getByText(/step 2 of 3/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^name$/i)).toHaveValue("report.pdf");
+    expect(screen.getByLabelText(/^file type$/i)).toHaveTextContent("PDF");
+    expect(screen.getByLabelText(/^kind$/i)).toHaveValue("document");
+    expect(screen.getByLabelText(/^language$/i)).toHaveValue("en");
+    expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
+  });
+
+  it("step 2 (metadata): keeps auto-inferring kind from the file until the publisher edits it manually", async () => {
+    renderModal();
+    const user = userEvent.setup();
+    await advanceToMetadata(user, makeFile("photo.png", "image/png"));
+    expect(screen.getByLabelText(/^kind$/i)).toHaveValue("image");
+
+    // Re-picking a file (still on the metadata step's underlying file state) keeps inferring...
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await selectFile(user, makeFile("data.json", "application/json"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    expect(screen.getByLabelText(/^kind$/i)).toHaveValue("data");
+
+    // ...but once the publisher picks a kind themselves, further file changes stop overriding it.
+    await user.selectOptions(screen.getByLabelText(/^kind$/i), "report");
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await selectFile(user, makeFile("photo.png", "image/png"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    expect(screen.getByLabelText(/^kind$/i)).toHaveValue("report");
+  });
+
+  it("step 2 (metadata): lets the publisher rename the artifact and add/remove tags", async () => {
+    renderModal();
+    const user = userEvent.setup();
+    await advanceToMetadata(user, makeFile());
+
+    await user.clear(screen.getByLabelText(/^name$/i));
+    await user.type(screen.getByLabelText(/^name$/i), "Q3 report");
+    await user.type(screen.getByLabelText(/tags/i), "roadmap{enter}");
+
+    expect(screen.getByText("roadmap")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /remove tag roadmap/i }));
+    expect(screen.queryByText("roadmap")).not.toBeInTheDocument();
+  });
+
+  it("step 2 (metadata): staging a relationship shows it and lets it be removed before publish", async () => {
+    renderModal();
+    const user = userEvent.setup();
+    await advanceToMetadata(user, makeFile());
+
+    await user.click(screen.getByRole("button", { name: /stub add relationship/i }));
+    expect(screen.getByText("Source diagram")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /remove relationship to source diagram/i }));
+    expect(screen.queryByText("Source diagram")).not.toBeInTheDocument();
+  });
+
+  it("step 3 (policy): blocks Publish and shows inline feedback until an audience is actually set", async () => {
+    renderModal();
+    const user = userEvent.setup();
+    await advanceToPolicy(user, makeFile());
 
     expect(screen.getByLabelText(/audience/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^publish$/i }));
@@ -96,31 +177,42 @@ describe("PublishArtifactModal", () => {
     expect(createArtifact).not.toHaveBeenCalled();
   });
 
-  it("Back returns to the file step without losing the selected file", async () => {
+  it("Back steps go metadata -> file and policy -> metadata without losing state", async () => {
     renderModal();
     const user = userEvent.setup();
-    await selectFileAndAdvance(user, makeFile());
+    await advanceToPolicy(user, makeFile());
 
     await user.click(screen.getByRole("button", { name: /back/i }));
+    expect(screen.getByText(/step 2 of 3/i)).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    expect(screen.getByText(/step 1 of 3/i)).toBeInTheDocument();
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
   });
 
-  it("publishes with the chosen policy: creates the artifact, PUTs the bytes, finalizes, notifies, and closes", async () => {
+  it("publishes with the chosen metadata and policy: creates the artifact, PUTs the bytes, finalizes, notifies, and closes", async () => {
     renderModal();
     const user = userEvent.setup();
-    await selectFileAndAdvance(user, makeFile());
+    await advanceToMetadata(user, makeFile());
+    await user.click(screen.getByRole("button", { name: /stub add relationship/i }));
+    await user.click(screen.getByRole("button", { name: /next/i }));
 
     await user.selectOptions(screen.getByLabelText(/audience/i), "public_authenticated");
     await user.click(screen.getByRole("button", { name: /^publish$/i }));
 
-    expect(createArtifact).toHaveBeenCalledWith({
-      title: "report.pdf",
-      fileName: "report.pdf",
-      contentType: "application/pdf",
-      audienceType: "public_authenticated",
-      expiry: "never",
-    });
+    expect(createArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "report.pdf",
+        fileName: "report.pdf",
+        contentType: "application/pdf",
+        kind: "document",
+        sourceTool: "frontendSPA",
+        language: "en",
+        audienceType: "public_authenticated",
+        expiry: "never",
+        relationships: [{ toId: "artifact-9", type: "derived_from", note: "export" }],
+      }),
+    );
     expect(global.fetch).toHaveBeenCalledWith(
       "https://storage.test/artifacts/artifact-1/report.pdf",
       expect.objectContaining({ method: "PUT" }),
@@ -133,7 +225,7 @@ describe("PublishArtifactModal", () => {
   it("publishes with specific_users selected via the checkbox combo box, no free text", async () => {
     renderModal();
     const user = userEvent.setup();
-    await selectFileAndAdvance(user, makeFile());
+    await advanceToPolicy(user, makeFile());
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: /reviewer@test\.local/i }));
@@ -148,7 +240,7 @@ describe("PublishArtifactModal", () => {
     mockFetch({ ok: false });
     renderModal();
     const user = userEvent.setup();
-    await selectFileAndAdvance(user, makeFile());
+    await advanceToPolicy(user, makeFile());
 
     await user.selectOptions(screen.getByLabelText(/audience/i), "public_authenticated");
     await user.click(screen.getByRole("button", { name: /^publish$/i }));

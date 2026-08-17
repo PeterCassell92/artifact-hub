@@ -7,7 +7,7 @@ import { AccessPolicyEditor } from "../components/AccessPolicyEditor";
 import { AccessPolicySummary } from "../components/AccessPolicySummary";
 import { RelatedArtifacts } from "../components/RelatedArtifacts";
 import { ShareLinkPanel } from "../components/ShareLinkPanel";
-import { fileTypeLabel, formatBytes, formatPublishedAtWithTime } from "../lib/formatters";
+import { fileTypeLabel, formatBytes, formatPublishedAtWithTime, kindLabel } from "../lib/formatters";
 
 /** Gated by canView server-side; 403/404 render inline "access ended"/"not found" states rather
  * than a crash — this is the live-revocation UX docs/frontend/01 §8 calls for. */
@@ -56,8 +56,8 @@ export function ArtifactDetailPage() {
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-md border border-neutral-200 bg-white p-4 text-sm sm:grid-cols-3">
         <div>
-          <dt className="text-neutral-500">Type</dt>
-          <dd className="text-neutral-800">{artifact.format ?? artifact.kind}</dd>
+          <dt className="text-neutral-500">Kind</dt>
+          <dd className="text-neutral-800">{kindLabel(artifact.kind)}</dd>
         </div>
         <div>
           <dt className="text-neutral-500">File type</dt>
@@ -92,7 +92,7 @@ export function ArtifactDetailPage() {
       <div>
         <h2 className="text-sm font-semibold text-neutral-700">Related Artifacts</h2>
         <div className="mt-3">
-          <RelatedArtifacts artifactId={artifact.id} />
+          <RelatedArtifacts artifactId={artifact.id} canManagePolicy={artifact.canManagePolicy} />
         </div>
       </div>
 

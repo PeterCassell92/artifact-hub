@@ -45,12 +45,12 @@ as query params to the list API.
 - The artifact list endpoints (`GET /api/artifacts`, `GET /api/artifacts?sharedWithMe=1`, `06`)
   accept the search term, facet filters, sort key, and a cursor.
 - **Faceted fields are indexed** (filetype, publishedAt, ownerId, tags, kind); free-form
-  `metadata`/`formatMeta` are only filtered on **known keys**, not scanned arbitrarily.
+  `metadata` is only filtered on **known keys**, not scanned arbitrarily.
 - Results always pass per-item `canView`, so filters never leak artifacts the user can't see.
 
 ## 5. Why the metadata breadth matters
 
 The richer the captured metadata (`../models/artifact.md` §2), the more useful these filters
-become. Publishing happens via MCP, so `publish_artifact` should encourage/collect this
-classification metadata at publish time (kind, tags, sourceTool, format) — the frontend's
-discovery quality depends on it.
+become. Publishing happens via MCP's `publish_artifact` or the SPA's publish modal — either path
+should encourage/collect this classification metadata at publish time (kind, tags, sourceTool)
+— the frontend's discovery quality depends on it.

@@ -34,11 +34,9 @@ we capture a broad, mostly-optional set to make discovery powerful:
 |-------|------|:---:|---------|:-----------:|
 | `kind` | enum | no | High-level category: `diagram` \| `document` \| `image` \| `report` \| `data` \| `other` | yes (facet) |
 | `tags` | string[] (via Tag join) | no | Free labels | yes (facet) |
-| `sourceTool` | string | no | Generating tool, e.g. `Claude Desktop` | yes (facet) |
+| `sourceTool` | string | no | Generating tool, e.g. `Claude Desktop`; the SPA always sends `"frontendSPA"` | yes (facet) |
 | `sourcePlatform` | string | no | e.g. `mcp` / client info | yes |
-| `format` | string | no | Format detail, e.g. `mermaid`, `markdown`, `png` | yes |
-| `formatMeta` | json | no | Format-specific detail (e.g. mermaid diagram type, page count for PDF, image dimensions) | partial |
-| `language` | string | no | Natural/programming language if applicable | yes |
+| `language` | string | no | Natural/programming language if applicable — free text over MCP, but the SPA's publish form restricts it to a fixed dropdown (data hygiene), defaulting to `en` | yes |
 | `metadata` | json (free-form) | no | Catch-all key/values not worth a column | partial (known keys) |
 
 ## 3. Access policy (one per artifact — see architecture/03)
@@ -71,10 +69,10 @@ Artifacts may relate to one another (`supersedes` / `derived_from` / `related_to
 
 ## 6. Notes
 
-- **Metadata is captured at publish time via MCP** (the only publish path — see
-  `../architecture/05-mcp-server-design.md`). `publish_artifact` should accept the classification
-  fields above; the backend derives `fileExtension`, `sizeBytes`, `checksumSha256`.
+- **Metadata is captured at publish time**, via MCP's `publish_artifact` tool (see
+  `../architecture/05-mcp-server-design.md`) or the SPA's "Publish New Artifact" modal's metadata
+  step — the backend derives `fileExtension`, `sizeBytes`, `checksumSha256` either way.
 - **Filterability** here is the contract the frontend filter/search UI is built against
   (`../frontend/02-filtering-and-search.md`). Known/faceted fields get indexes; free-form
-  `metadata`/`formatMeta` are queried on known keys only.
+  `metadata` is queried on known keys only.
 - No edit/delete of artifacts in v1 (content is immutable once published).

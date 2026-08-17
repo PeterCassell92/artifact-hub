@@ -46,11 +46,15 @@ and this `shareLinkId` (see `access-event.md`).
 | `createdAt` | timestamp | yes | — |
 
 Unique on `(fromId, toId, type)`. Written via the MCP `publish_artifact` tool's optional
-`relationships` argument (at publish time) or the `link_artifacts` tool / `POST
-/api/artifacts/:id/relationships` (post-hoc) — owner-only for `fromId`; `toId` only needs to be
-`canView`-able by the linker, not owned by them. Read via `list_artifact_relationships` (MCP) or
-`GET /api/artifacts/:id/relationships` — each row's `otherArtifact` is independently redacted to
-`null` if the caller can't view that side, so a relationship visible on one artifact never leaks
-the title/owner of a private artifact on its far end. The SPA renders relationships read-only (no
-authoring UI — matches "publishing is MCP-only", CLAUDE.md); enables agent navigation and
-inference between related artifacts (e.g. "this is an updated version of …").
+`relationships` argument (at publish time), the SPA's publish modal (same field, in its Metadata
+step), or the `link_artifacts` tool / `POST /api/artifacts/:id/relationships` (post-hoc, either
+surface) — owner-only for `fromId`; `toId` only needs to be `canView`-able by the linker, not
+owned by them. Read via `list_artifact_relationships` (MCP) or `GET
+/api/artifacts/:id/relationships` — each row's `otherArtifact` is independently redacted to `null`
+if the caller can't view that side, so a relationship visible on one artifact never leaks the
+title/owner of a private artifact on its far end. Removed via `unlink_artifacts` (MCP) or `DELETE
+/api/artifacts/:id/relationships/:relationshipId` — again owner-of-`fromId`-only; there's no
+in-place edit, so changing a relationship is unlink then re-link. The SPA's artifact detail page
+renders relationships with add/remove controls for the owner (outgoing side only — the `to` side's
+owner has no say, matching creation); enables agent navigation and inference between related
+artifacts (e.g. "this is an updated version of …").

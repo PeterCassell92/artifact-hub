@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { ArtifactSummary } from "contracts";
-import { expiryLabel, formatPublishedAt } from "../lib/formatters";
+import { expiryLabel, formatPublishedAt, kindLabel } from "../lib/formatters";
 
 interface ArtifactListItemProps {
   artifact: ArtifactSummary;
@@ -17,7 +17,7 @@ export function ArtifactListItem({ artifact, secondaryLabel }: ArtifactListItemP
       <div className="min-w-0">
         <p className="truncate font-medium text-neutral-900">{artifact.title}</p>
         <p className="mt-1 text-sm text-neutral-500">
-          {artifact.format ?? artifact.kind} · {secondaryLabel} · Published{" "}
+          {kindLabel(artifact.kind)} · {secondaryLabel} · Published{" "}
           {formatPublishedAt(artifact.publishedAt)}
         </p>
       </div>

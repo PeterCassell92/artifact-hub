@@ -19,7 +19,12 @@ import {
 import { buildAccessRevokedOutboxEvents, buildNewAccessOutboxEvents } from "../../database-service/artifactRecipients";
 import { createComment, listComments } from "../../database-service/comments";
 import { recordAdminAuditLog } from "../../database-service/adminAuditLog";
-import { createRelationship, createRelationships, listRelationships } from "../../database-service/relationships";
+import {
+  createRelationship,
+  createRelationships,
+  deleteRelationship,
+  listRelationships,
+} from "../../database-service/relationships";
 import { createShareLink } from "../../database-service/shareLinks";
 import { findUserWithGroupsById, toUserView } from "../../database-service/adminUsers";
 import { listGroups, toGroupView } from "../../database-service/groups";
@@ -41,14 +46,15 @@ import {
   PublishArtifactInput,
   RevokeAccessInput,
   SetAccessPolicyInput,
+  UnlinkArtifactsInput,
 } from "./schemas";
 import { classifyArtifactContent, toolError, toolJson } from "./toolHelpers";
 
-const PUBLISH_ARTIFACT_DESCRIPTION = `Publishes a new artifact from the calling agent's own work (a generated diagram, report, document, etc.) and sets who can see it. Use when the user asks to publish, share, or upload something the agent just produced. This is one of two ways artifacts get created — the other is the "Publish New Artifact" button in the web app's Dashboard, a file-only modal whose access-policy step still requires the owner to pick a real audience there too. Use this tool when the agent itself should do the publishing, e.g. with rich metadata (title, kind, tags, sourceTool, format, language) the UI path can't set — the UI always names the artifact after the file and only offers audience/expiry, no other metadata fields.
+const PUBLISH_ARTIFACT_DESCRIPTION = `Publishes a new artifact from the calling agent's own work (a generated diagram, report, document, etc.) and sets who can see it. Use when the user asks to publish, share, or upload something the agent just produced. This is one of two ways artifacts get created — the other is the "Publish New Artifact" button in the web app's Dashboard, a three-step modal (file, metadata, access policy) that also sets kind/tags/language/relationships. Use this tool when the agent itself should do the publishing, or needs something the UI path constrains: it always sends sourceTool "frontendSPA" itself (not user-editable) and offers only a fixed dropdown of common languages, whereas this tool accepts any sourceTool string (e.g. your own client name) and any language code.
 
 Do NOT use this to change an existing artifact's audience or expiry — use set_access_policy for that. publish_artifact never edits an artifact that already exists (no edit/delete in v1).
 
-Two calls, one tool — file bytes never pass through this tool call. Call it WITHOUT bytesRef to start: supply title, fileName, contentType, audience, and expiry (plus optional description/kind/tags/sourceTool/format/language/metadata). The result includes uploadUrl, a short-lived presigned PUT URL. PUT the file's bytes to that URL yourself, outside MCP (e.g. curl -X PUT --data-binary @file "$uploadUrl"). Then call publish_artifact again with ONLY bytesRef (the value returned as bytesRef the first time) and, optionally, checksumSha256, to finish — this verifies the upload actually landed before the artifact is ready.
+Two calls, one tool — file bytes never pass through this tool call. Call it WITHOUT bytesRef to start: supply title, fileName, contentType, audience, and expiry (plus optional description/kind/tags/sourceTool/language/metadata). The result includes uploadUrl, a short-lived presigned PUT URL. PUT the file's bytes to that URL yourself, outside MCP (e.g. curl -X PUT --data-binary @file "$uploadUrl"). Then call publish_artifact again with ONLY bytesRef (the value returned as bytesRef the first time) and, optionally, checksumSha256, to finish — this verifies the upload actually landed before the artifact is ready.
 
 audience.type is one of public_authenticated (any signed-in user) | specific_users (requires audience.userEmails) | user_groups (requires audience.groupNames). expiry is one of 24h | 7d | 30d | never. groupNames must match a group's exact name — the caller does NOT need to belong to a group to publish to it. If you don't already have the exact name, call list_groups to see every group in the organization (or get_user_details for just the caller's own groups) rather than guessing.
 
@@ -112,7 +118,7 @@ Example: list_comments({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
 
 const LINK_ARTIFACTS_DESCRIPTION = `Links two existing artifacts you own the first of, recording that one is a version/derivative/general relative of the other. Use when the user says something like "this supersedes the old report" or "this is the compiled version of the diagram I published earlier" AFTER both artifacts already exist. For linking at the moment of publishing a brand-new artifact, pass relationships directly to publish_artifact instead — that's the same effect in one fewer call.
 
-Do NOT use this to change access, comment, or otherwise modify an artifact — it only records a typed edge between two ids; it cannot be undone or edited over MCP (no relationship-delete in v1). Do NOT use it to link to an artifact you can't currently view — it will be refused, not silently skipped.
+Do NOT use this to change access, comment, or otherwise modify an artifact — it only records a typed edge between two ids. To remove a relationship, use unlink_artifacts (there's no in-place edit — retract and re-link instead). Do NOT use it to link to an artifact you can't currently view — it will be refused, not silently skipped.
 
 Owner-only for fromId — refuses if the caller doesn't own it. toId does NOT need to be owned by the caller, only viewable (linking your artifact to someone else's, that you can see, is a supported journey — e.g. "my report is derived_from their dataset").
 
@@ -133,6 +139,18 @@ Arguments: id (artifact uuid).
 Result is metadata-only: { relationships: [{ id, type, direction, note, otherArtifact: {id, title, kind, ownerId} | null, createdByName, createdAt }] }, plus a markdown table.
 
 Example: list_artifact_relationships({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
+
+const UNLINK_ARTIFACTS_DESCRIPTION = `Removes a relationship previously created by link_artifacts or publish_artifact's relationships argument. Use when the user says something like "that's not related anymore" or "remove that link" — or before re-linking two artifacts with a different type (there's no in-place edit; retract, then link_artifacts again with the corrected type/note).
+
+Do NOT use this to change an artifact's access policy, comment, or content — it only removes one relationship edge. Do NOT guess a relationshipId — call list_artifact_relationships first to find the real one; an unknown id is refused, not silently ignored.
+
+Owner-only for the relationship's fromId side — same rule as creating it: whoever asserted the relationship is the only one who can retract it, regardless of who owns the other (toId) artifact.
+
+Arguments: relationshipId (from a prior list_artifact_relationships or link_artifacts call).
+
+Result is metadata-only: { ok: true }.
+
+Example: unlink_artifacts({ relationshipId: "6b1f9e2a-6a3a-4b8d-9a0e-6f9c8b0a1d2e" }).`;
 
 const CREATE_SHARE_LINK_DESCRIPTION = `Mints a shareable locator link (/s/<token>) for an artifact the caller can view — owner or not. Use when the user asks for a link to send someone.
 
@@ -252,7 +270,6 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
         kind: args.kind,
         tags: args.tags,
         sourceTool: args.sourceTool,
-        format: args.format,
         language: args.language,
         metadata: args.metadata,
         audienceType: resolved.audienceType,
@@ -437,6 +454,22 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
 
       const relationships = await listRelationships(viewer, artifact.id);
       return toolJson({ relationships }, relationshipsTable(relationships));
+    }),
+  );
+
+  server.registerTool(
+    "unlink_artifacts",
+    { title: "Unlink artifacts", description: UNLINK_ARTIFACTS_DESCRIPTION, inputSchema: UnlinkArtifactsInput },
+    wrap("unlink_artifacts", async (args) => {
+      const result = await deleteRelationship(args.relationshipId, viewer);
+      if (!result.ok) {
+        return toolError(
+          result.reason === "not_found"
+            ? "No relationship found with that relationshipId."
+            : "You do not own the fromId side of that relationship.",
+        );
+      }
+      return toolJson({ ok: true });
     }),
   );
 

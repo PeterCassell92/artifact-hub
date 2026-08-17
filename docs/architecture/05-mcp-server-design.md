@@ -83,6 +83,7 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 | `list_comments` | Read back an artifact's comments, oldest first | `{ id }` | `{ comments: [{ id, authorName, body, createdAt }] }` + markdown table |
 | `link_artifacts` | Link an owned artifact to one you can view (`supersedes`/`derived_from`/`related_to`), post-hoc | `{ fromId, toId, type, note? }` | `{ relationshipId, createdAt }` |
 | `list_artifact_relationships` | Read back an artifact's relationships, either direction | `{ id }` | `{ relationships: [{ id, type, direction, note, otherArtifact, createdByName, createdAt }] }` + markdown table |
+| `unlink_artifacts` | Retract a relationship (owner of its `fromId` only); no in-place edit — unlink then re-`link_artifacts` | `{ relationshipId }` | `{ ok }` |
 | `create_share_link` | Mint a locator link for an artifact you can view (owner or not) | `{ id }` | `{ url }` |
 | `set_access_policy` | Change an owned artifact's audience/expiry — narrowing is the general revocation mechanism | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
 | `revoke_access` | Instant, whole-artifact cutoff for an owned artifact — independent of audience/expiry (`03` §1a) | `{ id }` | `{ ok, revokedAt }` |
@@ -98,13 +99,14 @@ Notes:
   caller doesn't belong to is a supported journey**, not an error) rather than guessing. Neither
   tool exposes group *membership rosters* or any create/rename/membership-change capability —
   read-only names/descriptions only, staying clear of the "no group management over MCP" rule below.
-- **Publishing is also available via the SPA** (see `06` and `../frontend/`) — a "Publish New
-  Artifact" modal on the Dashboard, file-only (title = filename), that still requires the owner to
-  set a real audience there before it saves. `publish_artifact` remains the only way to set rich
-  metadata (kind/tags/sourceTool/format/language/custom `metadata`) at creation time.
+- **Publishing is also available via the SPA** (see `06` and `../frontend/`) — a three-step
+  "Publish New Artifact" modal on the Dashboard (file, metadata, access policy) that sets
+  kind/tags/language/relationships and requires the owner to set a real audience before it saves.
+  `publish_artifact` remains the only way to set a free-text `sourceTool` (the SPA always sends
+  `"frontendSPA"` itself) or any language code (the SPA restricts language to a fixed dropdown).
 - **Capture rich metadata at publish.** `publish_artifact` should collect the classification
   metadata that powers the frontend filters — `kind`, `tags`, `sourceTool` (e.g. "Claude
-  Desktop"), `format`, plus free-form `metadata` — per [`../models/artifact.md`](../models/artifact.md).
+  Desktop"), plus free-form `metadata` — per [`../models/artifact.md`](../models/artifact.md).
   The backend derives `fileExtension`, `sizeBytes`, `checksumSha256`.
 - **Upload path** for `publish_artifact`: hand the client a **presigned PUT** so bytes go
   straight to Tigris out-of-band (`bytesRef` correlates the upload), *or* accept small content
@@ -122,7 +124,9 @@ Notes:
   linking your artifact to someone else's (that you can see) is a supported journey.
   `list_artifact_relationships` reads them back, redacting `otherArtifact` to `null` per-row when
   the caller can't view that side, so a relationship on a visible artifact never leaks a private
-  one on its far end.
+  one on its far end. `unlink_artifacts` retracts one by id — owner of its `fromId` only, same as
+  creating it; there's no in-place edit, so changing a relationship is unlink then re-link. The
+  REST equivalents (`06` §2) back the artifact detail page's own add/remove UI.
 
 ### `list_shared_with_me` result shape (illustrative)
 

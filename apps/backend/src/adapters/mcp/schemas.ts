@@ -34,7 +34,6 @@ export const PublishArtifactInput = z.object({
   kind: ArtifactKind.optional(),
   tags: z.array(z.string().min(1)).optional(),
   sourceTool: z.string().optional(),
-  format: z.string().optional(),
   language: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   audience: McpAudienceInput.optional(),
@@ -84,6 +83,8 @@ export const SetAccessPolicyInput = z.object({
 export const LinkArtifactsInput = ArtifactRelationshipInput.extend({ fromId: z.string().uuid() });
 
 export const ListArtifactRelationshipsInput = z.object({ id: z.string().uuid() });
+
+export const UnlinkArtifactsInput = z.object({ relationshipId: z.string().uuid() });
 
 export const SummariseArtifactReviewsArgs = z.object({ artifactId: z.string() });
 

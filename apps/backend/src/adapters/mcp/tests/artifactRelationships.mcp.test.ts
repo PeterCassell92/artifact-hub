@@ -100,4 +100,52 @@ describe("Agents can link artifacts they own to ones they can view, and read rel
     const result = await client.callTool({ name: "list_artifact_relationships", arguments: { id: artifact.id } });
     expect(result.isError).toBe(true);
   });
+
+  it("unlink_artifacts removes a relationship for the owner of its fromId", async () => {
+    const { client, user } = await ctx.connectAsUser(`owner-${randomUUID()}@test.local`);
+    const from = await ctx.makeArtifact({ ownerId: user.id });
+    const to = await ctx.makeArtifact({ ownerId: user.id });
+    const relationship = await ctx.prisma.artifactRelationship.create({
+      data: { fromId: from.id, toId: to.id, type: "related_to", createdById: user.id },
+    });
+
+    const result = await client.callTool({
+      name: "unlink_artifacts",
+      arguments: { relationshipId: relationship.id },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const stored = await ctx.prisma.artifactRelationship.findUnique({ where: { id: relationship.id } });
+    expect(stored).toBeNull();
+  });
+
+  it("unlink_artifacts refuses a caller who doesn't own the relationship's fromId", async () => {
+    const owner = await ctx.makeActiveUser(`owner-${randomUUID()}@test.local`);
+    const { client } = await ctx.connectAsUser(`outsider-${randomUUID()}@test.local`);
+    const from = await ctx.makeArtifact({ ownerId: owner.id });
+    const to = await ctx.makeArtifact({ ownerId: owner.id });
+    const relationship = await ctx.prisma.artifactRelationship.create({
+      data: { fromId: from.id, toId: to.id, type: "related_to", createdById: owner.id },
+    });
+
+    const result = await client.callTool({
+      name: "unlink_artifacts",
+      arguments: { relationshipId: relationship.id },
+    });
+
+    expect(result.isError).toBe(true);
+    const stored = await ctx.prisma.artifactRelationship.findUnique({ where: { id: relationship.id } });
+    expect(stored).not.toBeNull();
+  });
+
+  it("unlink_artifacts refuses an unknown relationshipId", async () => {
+    const { client } = await ctx.connectAsUser(`owner-${randomUUID()}@test.local`);
+
+    const result = await client.callTool({
+      name: "unlink_artifacts",
+      arguments: { relationshipId: randomUUID() },
+    });
+
+    expect(result.isError).toBe(true);
+  });
 });

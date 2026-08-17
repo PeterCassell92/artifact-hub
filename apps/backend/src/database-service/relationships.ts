@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { ArtifactRelationshipInput, ArtifactRelationshipSummary, RelationType } from "contracts";
 import { prisma } from "../db";
-import { canView, type Viewer } from "../core/authz";
+import { canManagePolicy, canView, type Viewer } from "../core/authz";
 import { findArtifactForDetail, toPolicy } from "./artifacts";
 
 export type CreateRelationshipResult =
@@ -67,6 +67,32 @@ export async function createRelationships(
     results.push(await createRelationship(fromId, linker, input));
   }
   return results;
+}
+
+export type DeleteRelationshipResult =
+  | { ok: true }
+  | { ok: false; reason: "not_found" | "forbidden" };
+
+/**
+ * Removes a relationship. Ownership follows the `from` side, same as creating one — the owner of
+ * `fromId` is the one who asserted the relationship, so they're the one who can retract it; the
+ * `to` side's owner has no say (matches how they had no say in it being created either). Editing
+ * a relationship in place isn't supported (v1) — retract and re-`link_artifacts` instead.
+ */
+export async function deleteRelationship(
+  relationshipId: string,
+  remover: Viewer,
+): Promise<DeleteRelationshipResult> {
+  const relationship = await prisma.artifactRelationship.findUnique({ where: { id: relationshipId } });
+  if (!relationship) return { ok: false, reason: "not_found" };
+
+  const from = await findArtifactForDetail(relationship.fromId);
+  if (!from || !canManagePolicy(remover, toPolicy(from))) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  await prisma.artifactRelationship.delete({ where: { id: relationshipId } });
+  return { ok: true };
 }
 
 /**

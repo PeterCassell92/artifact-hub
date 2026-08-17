@@ -666,6 +666,53 @@ describe("GET /api/artifacts*", () => {
     });
   });
 
+  describe("DELETE /api/artifacts/:id/relationships/:relationshipId", () => {
+    it("204s and removes the relationship for the owner of fromId", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const from = await makeArtifact({ ownerId: owner.id });
+      const to = await makeArtifact({ ownerId: owner.id });
+      const relationship = await prisma.artifactRelationship.create({
+        data: { fromId: from.id, toId: to.id, type: "related_to", createdById: owner.id },
+      });
+
+      await request(app)
+        .delete(`/api/artifacts/${from.id}/relationships/${relationship.id}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(204);
+
+      const stored = await prisma.artifactRelationship.findUnique({ where: { id: relationship.id } });
+      expect(stored).toBeNull();
+    });
+
+    it("403s for a caller who doesn't own the relationship's fromId", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const outsider = await makeActiveUser(`outsider-${Math.random()}@test.local`);
+      const from = await makeArtifact({ ownerId: owner.id });
+      const to = await makeArtifact({ ownerId: owner.id });
+      const relationship = await prisma.artifactRelationship.create({
+        data: { fromId: from.id, toId: to.id, type: "related_to", createdById: owner.id },
+      });
+
+      await request(app)
+        .delete(`/api/artifacts/${from.id}/relationships/${relationship.id}`)
+        .set("Authorization", `Bearer ${tokenFor(outsider.idpSub as string)}`)
+        .expect(403);
+
+      const stored = await prisma.artifactRelationship.findUnique({ where: { id: relationship.id } });
+      expect(stored).not.toBeNull();
+    });
+
+    it("404s for an unknown relationshipId", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id });
+
+      await request(app)
+        .delete(`/api/artifacts/${artifact.id}/relationships/00000000-0000-0000-0000-000000000000`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(404);
+    });
+  });
+
   describe("PUT /api/artifacts/:id/policy (revocation)", () => {
     it("narrowing the audience flips a previously-allowed viewer to denied, and audits it", async () => {
       const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
@@ -1015,6 +1062,32 @@ describe("GET /api/artifacts*", () => {
 
       const allowedUsers = await prisma.artifactAllowedUser.findMany({ where: { artifactId: res.body.artifactId } });
       expect(allowedUsers).toHaveLength(0);
+    });
+
+    it("links relationships passed alongside the new artifact, reporting per-entry outcomes", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const source = await makeArtifact({ ownerId: owner.id, title: "Source diagram" });
+
+      const res = await request(app)
+        .post("/api/artifacts")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({
+          title: "Compiled output",
+          fileName: "out.pdf",
+          contentType: "application/pdf",
+          audienceType: "specific_users",
+          userEmails: [],
+          expiry: "never",
+          relationships: [{ toId: source.id, type: "derived_from", note: "compiled export" }],
+        })
+        .expect(201);
+
+      expect(res.body.relationshipResults).toEqual([
+        expect.objectContaining({ ok: true, relationshipId: expect.any(String) }),
+      ]);
+      const stored = await prisma.artifactRelationship.findMany({ where: { fromId: res.body.artifactId } });
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({ toId: source.id, type: "derived_from", note: "compiled export" });
     });
 
     it("is private by default — the owner can view it immediately, nobody else can", async () => {

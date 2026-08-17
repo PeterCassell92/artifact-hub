@@ -151,8 +151,6 @@ model Artifact {
   kind           ArtifactKind @default(other)
   sourceTool     String? // e.g. "Claude Desktop"
   sourcePlatform String?
-  format         String? // e.g. "mermaid", "markdown", "png"
-  formatMeta     Json         @default("{}")
   language       String?
   metadata       Json         @default("{}") // free-form catch-all
 

@@ -9,8 +9,8 @@ function kindOf(artifact: ArtifactDetail): Kind {
   if (artifact.contentType === "application/pdf") return "pdf";
   if (artifact.contentType.startsWith("image/")) return "image";
   if (artifact.contentType === "text/html") return "html";
-  if (artifact.format === "markdown" || artifact.fileName.endsWith(".md")) return "markdown";
-  if (artifact.format === "mermaid" || artifact.fileName.endsWith(".mmd")) return "mermaid";
+  if (artifact.fileName.endsWith(".md")) return "markdown";
+  if (artifact.fileName.endsWith(".mmd")) return "mermaid";
   return "unsupported";
 }
 
