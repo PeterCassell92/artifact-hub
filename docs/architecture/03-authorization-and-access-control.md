@@ -21,7 +21,8 @@ Each artifact carries exactly **one** owner-controlled policy:
   timestamp computed at publish/policy-update time.
 
 Only the **owner** can create or change the policy. There is no per-link policy; **share
-links are pure locators** (see §5).
+links are pure locators** (see §5) — so *minting* a link is a separate, weaker permission than
+*changing the policy*: any viewer who passes `canView` may mint one (§5), not just the owner.
 
 ---
 
@@ -110,6 +111,9 @@ still sees it in "My Artifacts."
      (Tigris, S3-compatible) and redirect/stream; otherwise `403`.
 - The link never encodes permission and never bypasses the policy. Tokens exist so URLs are
   clean and non-enumerable (not sequential ids), and so a link can be individually retired.
+- **Minting** a link requires `canView(user, artifact)` (owner or any authorized viewer) — not
+  ownership. Because the link carries no permission of its own, a non-owner viewer minting one
+  can never grant a redeemer more access than that redeemer's own `canView` check already allows.
 
 ---
 

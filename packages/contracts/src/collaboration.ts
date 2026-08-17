@@ -21,3 +21,10 @@ export const ShareLinkView = z.object({
   createdAt: z.string().datetime(),
 });
 export type ShareLinkView = z.infer<typeof ShareLinkView>;
+
+/** GET /api/s/:token JSON body (Accept: application/json) — mirrors DownloadUrlResponse's
+ * content-negotiation pattern so SPA `fetch` callers avoid a cross-origin redirect chain. */
+export const ShareLinkRedemptionResponse = z.object({
+  artifactId: z.string().uuid(),
+});
+export type ShareLinkRedemptionResponse = z.infer<typeof ShareLinkRedemptionResponse>;

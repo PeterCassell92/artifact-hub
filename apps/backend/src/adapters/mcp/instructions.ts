@@ -25,12 +25,12 @@ Collaborating:
 - "comment_on_artifact" adds an attributable comment (shown to others with author name and date).
 - The "summarise_artifact_reviews" prompt is user-invoked (e.g. a slash command) and asks the client's own model to summarise an artifact's comments — this server never calls an LLM itself.
 
-Managing access (owner only):
-- "set_access_policy" changes an owned artifact's audience/expiry — this is how access is revoked; there is no separate revoke action.
-- "create_share_link" mints a locator link for others to open. The link is not a bearer token: opening it still re-checks the current access policy.
+Managing access:
+- "set_access_policy" (owner only) changes an owned artifact's audience/expiry — this is how access is revoked; there is no separate revoke action.
+- "create_share_link" (anyone who can currently view the artifact, not just the owner) mints a locator link for others to open. The link is not a bearer token: opening it still re-checks the current access policy, so a non-owner minting one can never grant more access than their own view access already allows.
 
 Companion web app:
-- A companion single-page app at ${appOrigin} lets signed-in users browse "My Artifacts" and "Shared With Me", view/download artifacts, read and post comments, and — if they own the artifact — manage its access policy and share links, all from a browser. It has NO publish/upload screen; publishing only ever happens through this MCP server. Point users there when they want to browse or manage visually rather than conversationally.
+- A companion single-page app at ${appOrigin} lets signed-in users browse "My Artifacts" and "Shared With Me", view/download artifacts, read and post comments, create share links for anything they can view, and — if they own the artifact — manage its access policy, all from a browser. It has NO publish/upload screen; publishing only ever happens through this MCP server. Point users there when they want to browse or manage visually rather than conversationally.
 
 Identity and scope:
 - Every call here runs as the authenticated caller. The agent can do everything the signed-in human member can do (publish, view per policy, comment, manage its own artifacts' policy) but nothing more — no admin or user-management actions are exposed over MCP.`;

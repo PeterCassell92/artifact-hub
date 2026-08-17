@@ -671,7 +671,7 @@ describe("GET /api/artifacts*", () => {
         .expect(404);
     });
 
-    it("403s a non-owner trying to mint a share link", async () => {
+    it("403s a non-owner with no view access trying to mint a share link", async () => {
       const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
       const other = await makeActiveUser(`other-${Math.random()}@test.local`);
       const artifact = await makeArtifact({ ownerId: owner.id });
@@ -680,6 +680,45 @@ describe("GET /api/artifacts*", () => {
         .post(`/api/artifacts/${artifact.id}/share-links`)
         .set("Authorization", `Bearer ${tokenFor(other.idpSub as string)}`)
         .expect(403);
+    });
+
+    it("201s for a non-owner who can view the artifact — minting is canView, not owner-only", async () => {
+      // A share link is a pure locator (03 §5): a non-owner viewer handing it out can never grant
+      // more access than the redeemer's own canView check allows on redemption, so this is safe.
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const viewer = await makeActiveUser(`viewer-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      const created = await request(app)
+        .post(`/api/artifacts/${artifact.id}/share-links`)
+        .set("Authorization", `Bearer ${tokenFor(viewer.idpSub as string)}`)
+        .expect(201);
+
+      expect(created.body.url).toContain("/s/");
+    });
+
+    it("returns JSON {artifactId} instead of a redirect when Accept: application/json", async () => {
+      // The SPA's ShareLinkRedemptionPage resolves this via `fetch`, not a browser navigation.
+      // A 302 to our own frontend origin still fails: once a redirect chain crosses an origin
+      // boundary (backend -> frontend), the whole chain is CORS-tainted, so even the final
+      // same-origin hop needs an Access-Control-Allow-Origin header it will never have. Content
+      // negotiation (like /download) sidesteps the redirect entirely for JSON callers.
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+      const created = await request(app)
+        .post(`/api/artifacts/${artifact.id}/share-links`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(201);
+      const token = new URL(created.body.url).pathname.split("/").pop();
+
+      const res = await request(app)
+        .get(`/api/s/${token}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .set("Accept", "application/json")
+        .expect(200);
+
+      expect(res.body.artifactId).toBe(artifact.id);
     });
   });
 

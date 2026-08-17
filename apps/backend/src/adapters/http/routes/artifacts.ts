@@ -11,7 +11,7 @@ import {
   DownloadUrlResponse,
   ShareLinkView,
 } from "contracts";
-import { canManagePolicy, canView } from "../../../core/authz";
+import { canCreateShareLink, canManagePolicy, canView } from "../../../core/authz";
 import { computeExpiresAt } from "../../../core/policy";
 import {
   checkViewAndAudit,
@@ -226,7 +226,9 @@ export function createArtifactsRouter(): Router {
     res.json(ArtifactDetail.parse(toDetail(updated!, viewer.id, now)));
   });
 
-  // POST /api/artifacts/:id/share-links — owner-only; pure locator (03 §5), audit-logged.
+  // POST /api/artifacts/:id/share-links — anyone who can view the artifact; pure locator (03 §5),
+  // audit-logged. Safe for a non-owner: the link carries no permission of its own, so whoever
+  // redeems it still has to pass canView themselves on every redemption.
   router.post("/:id/share-links", async (req, res) => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) {
@@ -241,8 +243,8 @@ export function createArtifactsRouter(): Router {
     }
 
     const viewer = req.viewer!;
-    if (!canManagePolicy(viewer, toPolicy(artifact))) {
-      sendError(res, 403, "forbidden", "Only the owner can create a share link");
+    if (!canCreateShareLink(viewer, toPolicy(artifact), new Date()).allowed) {
+      sendError(res, 403, "forbidden", "You do not have access to this artifact");
       return;
     }
 

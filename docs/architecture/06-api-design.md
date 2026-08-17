@@ -68,12 +68,18 @@ resource read (`05`) — writes an `AccessEvent` capturing the **route** (`ui` /
 
 | Method & path | Purpose | Authz |
 |---------------|---------|-------|
-| `POST /api/artifacts/:id/share-links` | Mint a locator link `/s/<token>` | owner |
+| `POST /api/artifacts/:id/share-links` | Mint a locator link `/s/<token>` | `canView` (not owner-only — see below) |
 | `GET /api/s/:token` | Redeem: resolve token → require auth (magic link) → `canView` → `302` to presigned URL (or artifact detail). **Records an AccessEvent** (`route=share_link`, with `shareLinkId`) | `canView` after login |
 | `POST /api/artifacts/:id/share-links/:linkId/revoke` | Retire a single link (optional; policy still authoritative) | owner |
 
 Redemption never trusts the token for access — it only locates the artifact; the current policy
 decides (see `03` §5). Unauthenticated redeemers are redirected to login, then back.
+
+Minting a link only requires `canView`, not ownership: a share link is a pure locator that
+carries no permission of its own (`03` §5), so a non-owner viewer handing the link to someone else
+can never grant more access than the redeemer's own `canView` check allows on redemption. The
+owner is the only one who can *change* the policy (`03` §1) — a viewer minting a link doesn't touch
+it.
 
 ## 5. Admin routes (role = `admin`)
 

@@ -80,7 +80,7 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 | `list_shared_with_me` | List artifacts shared **to** the caller, optional time window | `{ sinceHours?, cursor?, limit? }` | **all** results returned; **first 10 rendered** as a markdown table (numeric id, filetype, publishingUserName, publicationDate) |
 | `get_artifact` | Fetch **small** content inline for reasoning | `{ id }` | small image → image block; small text/PDF → embedded resource; else → pointer to `artifact://<id>` |
 | `comment_on_artifact` | Add an attributable comment | `{ id, body }` | `{ commentId, createdAt }` |
-| `create_share_link` | Mint a locator link for an artifact you own | `{ id }` | `{ url }` |
+| `create_share_link` | Mint a locator link for an artifact you can view (owner or not) | `{ id }` | `{ url }` |
 | `set_access_policy` | Change an owned artifact's audience/expiry (revoke) | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
 | `get_user_details` | Caller's own identity — email, name, role, group names | `{}` | `{ email, name, role, groupNames }` |
 | `list_groups` | Every group in the org, regardless of the caller's membership | `{}` | `{ groups: [{ name, description }] }` + markdown table |

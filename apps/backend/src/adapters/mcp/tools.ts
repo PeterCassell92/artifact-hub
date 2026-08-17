@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AuthenticatedViewer } from "../../auth/tokenValidation";
-import { canManagePolicy, canView } from "../../core/authz";
+import { canCreateShareLink, canManagePolicy, canView } from "../../core/authz";
 import { computeExpiresAt } from "../../core/policy";
 import {
   checkViewAndAudit,
@@ -88,11 +88,11 @@ Result is metadata-only: { commentId, createdAt }.
 
 Example: comment_on_artifact({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", body: "Looks good — ship it." }).`;
 
-const CREATE_SHARE_LINK_DESCRIPTION = `Mints a shareable locator link (/s/<token>) for an artifact the caller owns. Use when the user asks for a link to send someone.
+const CREATE_SHARE_LINK_DESCRIPTION = `Mints a shareable locator link (/s/<token>) for an artifact the caller can view — owner or not. Use when the user asks for a link to send someone.
 
-Owner-only — refuses for artifacts the caller doesn't own. Do NOT treat the link as granting access: it is a pure locator, not a bearer token — whoever opens it still needs to pass the artifact's current access policy (see set_access_policy) to see anything.
+Requires view access — refuses for artifacts the caller can't currently see. Do NOT treat the link as granting access: it is a pure locator, not a bearer token — whoever opens it still needs to pass the artifact's current access policy (see set_access_policy) to see anything, so minting one for a non-owner is safe: it can never reach further than the caller's own view access already does.
 
-Arguments: id (artifact uuid, must be owned by the caller).
+Arguments: id (artifact uuid, the caller must be able to view it).
 
 Result is metadata-only: { url }.
 
@@ -291,8 +291,8 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       const artifact = await findArtifactForDetail(args.id);
       if (!artifact) return toolError("Artifact not found.");
 
-      if (!canManagePolicy(viewer, toPolicy(artifact))) {
-        return toolError("Only the owner can create a share link for this artifact.");
+      if (!canCreateShareLink(viewer, toPolicy(artifact), new Date()).allowed) {
+        return toolError("You do not have access to this artifact.");
       }
 
       const link = await createShareLink(artifact.id, viewer.id);

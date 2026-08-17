@@ -115,7 +115,7 @@ export function ArtifactViewer({ artifact }: { artifact: ArtifactDetail }) {
       <a
         href={url}
         download={artifact.fileName}
-        className="mt-3 inline-block rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+        className="mt-3 block w-full rounded-md bg-neutral-900 px-4 py-2 text-center text-sm font-medium text-white hover:bg-neutral-800"
       >
         Download
       </a>

@@ -69,3 +69,15 @@ export function canComment(
 export function canManagePolicy(viewer: Viewer, policy: ArtifactPolicy): boolean {
   return viewer.status !== "disabled" && viewer.id === policy.ownerId;
 }
+
+/** Minting a share link requires only view access, not ownership — a share link is a pure
+ * locator (03 §5) that carries no standalone permission, so anyone who already passes `canView`
+ * can safely hand the artifact's URL to someone else: the redeemer still has to pass `canView`
+ * themselves on every redemption. */
+export function canCreateShareLink(
+  viewer: Viewer,
+  policy: ArtifactPolicy,
+  now: Date,
+): Decision {
+  return canView(viewer, policy, now);
+}

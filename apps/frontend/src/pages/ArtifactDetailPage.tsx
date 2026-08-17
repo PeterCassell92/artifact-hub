@@ -4,6 +4,7 @@ import { ArtifactViewer } from "../components/ArtifactViewer";
 import { CommentForm } from "../components/CommentForm";
 import { CommentList } from "../components/CommentList";
 import { AccessPolicyEditor } from "../components/AccessPolicyEditor";
+import { AccessPolicySummary } from "../components/AccessPolicySummary";
 import { ShareLinkPanel } from "../components/ShareLinkPanel";
 import { fileTypeLabel, formatBytes, formatPublishedAt } from "../lib/formatters";
 
@@ -75,12 +76,17 @@ export function ArtifactDetailPage() {
         </div>
       </dl>
 
-      {artifact.canManagePolicy && (
-        <div className="grid gap-4 sm:grid-cols-2">
+      {/* Reaching this point at all means the server's canView already passed (403s render their
+          own early-return state above) — so any viewer here, owner or not, is safe to hand out a
+          share link (03 §5: it's a pure locator, never more permissive than their own access). */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {artifact.canManagePolicy ? (
           <AccessPolicyEditor artifact={artifact} />
-          <ShareLinkPanel artifactId={artifact.id} />
-        </div>
-      )}
+        ) : (
+          <AccessPolicySummary artifact={artifact} />
+        )}
+        <ShareLinkPanel artifactId={artifact.id} />
+      </div>
 
       <div>
         <h2 className="text-sm font-semibold text-neutral-700">Comments</h2>

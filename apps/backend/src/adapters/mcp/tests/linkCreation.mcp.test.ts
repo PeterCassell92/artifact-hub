@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { setupMcpTestContext, teardownMcpTestContext, textPayload, type McpTestContext } from "./support";
 
-/** Minting a locator link (`create_share_link`) — docs/architecture/03 §5, owner-only. */
-describe("Owners can mint a share link for their own artifacts; nobody else can", () => {
+/** Minting a locator link (`create_share_link`) — docs/architecture/03 §5, requires canView, not ownership. */
+describe("Anyone who can view an artifact can mint a share link for it; nobody else can", () => {
   let ctx: McpTestContext;
 
   beforeAll(async () => {
@@ -23,12 +23,23 @@ describe("Owners can mint a share link for their own artifacts; nobody else can"
     expect(payload.url).toContain("/s/");
   });
 
-  it("refuses a non-owner", async () => {
+  it("refuses a non-owner with no view access", async () => {
     const { client } = await ctx.connectAsUser(`other-${randomUUID()}@test.local`);
     const owner = await ctx.makeActiveUser(`owner-${randomUUID()}@test.local`);
     const artifact = await ctx.makeArtifact({ ownerId: owner.id });
 
     const result = await client.callTool({ name: "create_share_link", arguments: { id: artifact.id } });
     expect(result.isError).toBe(true);
+  });
+
+  it("mints a /s/<token> link for a non-owner who can view the artifact", async () => {
+    const { client } = await ctx.connectAsUser(`viewer-${randomUUID()}@test.local`);
+    const owner = await ctx.makeActiveUser(`owner-${randomUUID()}@test.local`);
+    const artifact = await ctx.makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
+
+    const result = await client.callTool({ name: "create_share_link", arguments: { id: artifact.id } });
+    expect(result.isError).toBeFalsy();
+    const payload = textPayload(result) as { url: string };
+    expect(payload.url).toContain("/s/");
   });
 });
