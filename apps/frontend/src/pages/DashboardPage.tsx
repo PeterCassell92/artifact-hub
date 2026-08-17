@@ -1,11 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useGetMeQuery, useGetMyArtifactsQuery, useGetSharedWithMeQuery } from "../store/api";
 import { ArtifactListItem } from "../components/ArtifactListItem";
+import { PublishArtifactModal } from "../components/PublishArtifactModal";
 import { audienceLabel } from "../lib/formatters";
 import { hasVisitedGetStarted, markVisitedGetStarted } from "../lib/getStartedCookie";
 
-const RECENT_LIMIT = 5;
+const RECENT_LIMIT = 3;
 
 /** Landing page after sign-in — recent My Artifacts + Shared With Me (docs/frontend/01 §3).
  * First-ever visit (no `artifact-hub-visited-get-started` cookie) redirects to /get-started once,
@@ -18,6 +19,7 @@ export function DashboardPage() {
   const { data: me } = useGetMeQuery();
   const mine = useGetMyArtifactsQuery({ limit: RECENT_LIMIT });
   const shared = useGetSharedWithMeQuery({ limit: RECENT_LIMIT });
+  const [publishOpen, setPublishOpen] = useState(false);
 
   useEffect(() => {
     if (!hasVisitedGetStarted()) {
@@ -37,8 +39,8 @@ export function DashboardPage() {
 
       {isEmpty && (
         <div className="mt-6 rounded-md border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
-          Nothing here yet. Artifacts are published via your agent (e.g. Claude Desktop) using Artifact
-          Hub&apos;s MCP tools — this page is for viewing and managing what&apos;s shared.{" "}
+          Nothing here yet. Publish a file using the button below, or ask your agent (e.g. Claude
+          Desktop) to publish one via Artifact Hub&apos;s MCP tools — either way it lands here.{" "}
           <Link to="/get-started" className="text-neutral-700 underline hover:text-neutral-900">
             Get started
           </Link>
@@ -61,6 +63,13 @@ export function DashboardPage() {
             />
           ))}
         </div>
+        <button
+          type="button"
+          onClick={() => setPublishOpen(true)}
+          className="mt-4 w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+        >
+          Publish New Artifact
+        </button>
       </section>
 
       <section className="mt-8">
@@ -80,6 +89,8 @@ export function DashboardPage() {
           ))}
         </div>
       </section>
+
+      <PublishArtifactModal open={publishOpen} onClose={() => setPublishOpen(false)} />
     </div>
   );
 }

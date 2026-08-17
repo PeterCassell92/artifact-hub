@@ -33,7 +33,13 @@ describe("/api/admin/*", () => {
 
   async function makeUser(role: "member" | "admin" = "member") {
     return prisma.user.create({
-      data: { email: `user-${Math.random()}@test.local`, idpSub: `idp|${Math.random()}`, status: "active", role },
+      data: {
+        email: `user-${Math.random()}@test.local`,
+        name: "Test User",
+        idpSub: `idp|${Math.random()}`,
+        status: "active",
+        role,
+      },
     });
   }
 

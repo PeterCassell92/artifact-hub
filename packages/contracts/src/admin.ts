@@ -5,7 +5,7 @@ import { InviteStatus, Role, UserStatus } from "./enums";
 export const UserView = z.object({
   id: z.string().uuid(),
   email: z.string().email(),
-  name: z.string().nullable(),
+  name: z.string(),
   role: Role,
   status: UserStatus,
   groupNames: z.array(z.string()),
@@ -13,11 +13,22 @@ export const UserView = z.object({
 });
 export type UserView = z.infer<typeof UserView>;
 
-/** Admin invites a user (email + role + group(s)). Name is optional — set on the placeholder
- * user record immediately, so it shows up in the users list before the invitee accepts. */
+/** Trimmed, non-admin-safe user view — no role/status/groupNames. Feeds the "Specific people"
+ * audience picker (AccessPolicyFields) so any authenticated user can select real emails instead
+ * of typing free text, mirroring GroupView's role for the "Groups" picker. */
+export const PublicUserView = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  name: z.string(),
+});
+export type PublicUserView = z.infer<typeof PublicUserView>;
+
+/** Admin invites a user (email + name + role + group(s)). Name is required — every user must
+ * have a display name (set on the placeholder user record immediately, so it shows up in the
+ * users list before the invitee accepts). */
 export const CreateInvitationInput = z.object({
   email: z.string().email(),
-  name: z.string().trim().min(1).optional(),
+  name: z.string().trim().min(1),
   role: Role.default("member"),
   groupIds: z.array(z.string().uuid()).default([]),
 });

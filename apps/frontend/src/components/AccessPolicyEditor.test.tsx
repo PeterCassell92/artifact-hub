@@ -16,10 +16,16 @@ const groups = [
   { id: "group-2", name: "Design", description: null, createdAt: "2026-01-01T00:00:00.000Z" },
 ];
 
+const users = [
+  { id: "user-a", email: "a@test.local", name: null },
+  { id: "user-b", email: "b@test.local", name: null },
+];
+
 jest.unstable_mockModule("../store/api", () => ({
   useUpdatePolicyMutation: () => [updatePolicy, { isLoading: false }],
   useRevokeAccessMutation: () => [revokeAccess, { isLoading: false }],
   useListGroupsQuery: () => ({ data: groups }),
+  useListUsersQuery: () => ({ data: users }),
 }));
 
 const { AccessPolicyEditor } = await import("./AccessPolicyEditor");
@@ -60,12 +66,52 @@ describe("AccessPolicyEditor", () => {
     revokeUnwrap.mockReset().mockResolvedValue({ ...artifact, revoked: true });
   });
 
-  it("builds the specific_users payload from the entered emails and expiry", async () => {
+  it("does not show a validation message on initial render for an artifact whose current audience is already specific_users", () => {
+    renderWithStore();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("blocks Save Policy and shows inline feedback when specific_users has nobody selected", async () => {
+    renderWithStore();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /save policy/i }));
+
+    expect(updatePolicy).not.toHaveBeenCalled();
+    expect(screen.getByText(/select at least one person/i)).toBeInTheDocument();
+  });
+
+  it("blocks Save Policy and shows inline feedback when user_groups has no groups checked", async () => {
+    renderWithStore();
+    const user = userEvent.setup();
+
+    await user.selectOptions(screen.getByLabelText(/audience/i), "user_groups");
+    await user.click(screen.getByRole("button", { name: /save policy/i }));
+
+    expect(updatePolicy).not.toHaveBeenCalled();
+    expect(screen.getByText(/select at least one group/i)).toBeInTheDocument();
+  });
+
+  it("clears the validation message once the missing field is fixed, without a second Save click", async () => {
+    renderWithStore();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /save policy/i }));
+    expect(screen.getByText(/select at least one person/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: /a@test\.local/i }));
+
+    expect(screen.queryByText(/select at least one person/i)).not.toBeInTheDocument();
+  });
+
+  it("builds the specific_users payload from checked, backend-driven users", async () => {
     renderWithStore();
     const user = userEvent.setup();
 
     await user.selectOptions(screen.getByLabelText(/audience/i), "specific_users");
-    await user.type(screen.getByLabelText(/user emails/i), "a@test.local, b@test.local");
+    await user.click(screen.getByRole("checkbox", { name: /a@test\.local/i }));
+    await user.click(screen.getByRole("checkbox", { name: /b@test\.local/i }));
     await user.selectOptions(screen.getByLabelText(/expiry/i), "7d");
     await user.click(screen.getByRole("button", { name: /save policy/i }));
 
@@ -77,6 +123,12 @@ describe("AccessPolicyEditor", () => {
         userEmails: ["a@test.local", "b@test.local"],
       },
     });
+  });
+
+  it("has no free-text input for people — only a checkbox list of real users", () => {
+    renderWithStore();
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
   it("builds the user_groups payload from checked, backend-driven groups", async () => {

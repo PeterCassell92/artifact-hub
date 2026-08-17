@@ -8,8 +8,8 @@ lives in the sibling documents `02`–`10` and these companion folders:
 
 - [`../models/`](../models/) — field-level domain models (source of truth for the schema): the
   rich **artifact metadata catalogue** and the **AccessEvent** audit trail.
-- [`../frontend/`](../frontend/) — frontend UX: dashboard, My Artifacts, Shared With Me, artifact
-  detail, filtering & search (publishing is **not** a frontend feature).
+- [`../frontend/`](../frontend/) — frontend UX: dashboard (incl. publishing a file), My Artifacts,
+  Shared With Me, artifact detail, filtering & search.
 - [`../user-journeys/`](../user-journeys/) — BDD `.feature` specs.
 - [`../development/`](../development/) — dev tooling (e.g. the MailCatcher email catcher).
 
@@ -49,8 +49,10 @@ It is usable two ways over the same core logic:
 7. **Authentication is passwordless (magic link).** No passwords anywhere — every human signs in
    with an emailed magic link. We already run an email service, so we reuse it and avoid all
    password management.
-8. **Publishing is an MCP-agent function only.** There is no upload/publish screen in the SPA;
-   users publish via their agent (`publish_artifact`). The frontend is for consuming and managing.
+8. **Publishing is available from either an agent or the SPA.** Agents use `publish_artifact`
+   (MCP); humans use the Dashboard's "Publish New Artifact" button, which only collects a file —
+   title defaults to the filename, audience defaults to private (owner-only), expiry defaults to
+   never; the owner refines audience/expiry afterward via the existing access-policy editor.
 9. **Every artifact access is audited.** View/download via the UI, a share link, or an MCP agent
    all write an `AccessEvent` (allowed and denied) — a full access trail across all three routes.
 
@@ -142,9 +144,9 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 26 | Repo layout | Monorepo (yarn workspaces), path-filtered CI | DECIDED | 08 |
 | 27 | HTML sandboxing | Serve off sandbox origin + strict CSP | DECIDED | 06 |
 | 28 | Authz model | Owner-based | DECIDED | 03 |
-| 29 | Publishing | **MCP-only** — no upload/publish UI in the SPA | DECIDED | 05, frontend/ |
+| 29 | Publishing | Available via **both** MCP (`publish_artifact`) and the SPA ("Publish New Artifact", file-only modal; safe defaults, edited afterward via the policy editor) — reversed from the original MCP-only decision | DECIDED | 05, 06, frontend/ |
 | 30 | Access auditing | `AccessEvent` per view/download across ui/share_link/mcp | DECIDED | 04, models/ |
-| 31 | Frontend scope | Consume/manage only (My Artifacts, Shared, filters/search) | DECIDED | frontend/ |
+| 31 | Frontend scope | Consume/manage, **plus publishing a file** (My Artifacts, Shared, filters/search, Publish New Artifact) | DECIDED | frontend/ |
 | 32 | Dev email | MailCatcher (Docker) in dev; Resend in prod | DECIDED | development/ |
 | 33 | Frontend stack | React + Redux Toolkit + Tailwind; modular tested components | DECIDED | development/, 09 |
 | 34 | Notification pattern | **No `window.alert`/`confirm`/`prompt`, no toasts**; in-DOM state-driven | DECIDED | development/ |
@@ -154,7 +156,7 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 38 | Secrets strategy | Runtime → `fly secrets`; frontend → Netlify env (`VITE_*`); dev → `.env` | DECIDED | 07 |
 | 39 | idpSub linking (test-only) | `POST /test/mcp-token` backfills `idpSub` + flips `invited`→`active` on mint, standing in for the not-yet-built "first login" linking step. Never mounted/reachable in production, and never used for real local dev login (still real Auth0 on the dev tenant); never creates a `users` row (R1 still holds) | DECIDED | 02 §1, development/bruno-mcp-token.md |
 | 40 | Node toolchain version | **Node 24 "Krypton" (latest LTS)**, pinned via Volta — Node 20 "Iron" (the original pin) reached its documented EOL before implementation started. Bumped root `engines`, `apps/backend/Dockerfile`, `netlify.toml` `NODE_VERSION` together | DECIDED | CLAUDE.md |
-| 41 | Publish-backing endpoints resequenced | `POST /api/artifacts` (create) + `.../finalize` — listed under implementation-plan.md Phase 3 — moved to Phase 4, built alongside the `publish_artifact` MCP tool that's their only caller. Matches `09`'s own BDD mapping ("publisher-publish-with-policy" → MCP in-memory + core unit, not API integration) | DECIDED | 05, development/implementation-plan.md |
+| 41 | Publish-backing endpoints resequenced | `POST /api/artifacts` (create) + `.../finalize` — listed under implementation-plan.md Phase 3 — moved to Phase 4, built alongside the `publish_artifact` MCP tool that's their only caller. Matches `09`'s own BDD mapping ("publisher-publish-with-policy" → MCP in-memory + core unit, not API integration). **Superseded in part** — these endpoints are no longer MCP-only backing; the SPA's "Publish New Artifact" modal (Dashboard) calls them directly as a second caller alongside `publish_artifact`. See decision #29's updated text | DECIDED | 05, development/implementation-plan.md |
 | 42 | `APP_ORIGIN` env var | Backend-side public-origin config, needed to build absolute share-link (`03` §5) and invitation-accept (`02` §4) URLs — named in neither doc. Defaults to the Vite dev port; prod sets the real Netlify domain via `fly secrets` | DECIDED | 03 §5, 02 §4 |
 | 43 | Auth0 user provisioning is async | `acceptInvitation` upserts the local `users` row + memberships + invitation status **synchronously**, then enqueues an `auth0.provision_user` outbox row in the *same* transaction; the drain worker makes the real Management API call and links its returned `user_id` as `idpSub`. Resolves `02` §4's diagram (which reads as an inline call) against `02` §6's own stated reliability mechanism (outbox for *all* external calls, Auth0 included) | DECIDED | 02 §4/§6 |
 | 44 | `publish_artifact` upload mechanic | `05`'s input table lists `bytesRef` alongside full metadata in one shot, but never defines how an agent obtains it — there is no separate "request an upload slot" tool in the v1 list, and an MCP tool result can't itself perform an HTTP PUT. Resolved as **one tool, two calls**: call 1 (no `bytesRef`) creates the artifact row + policy and returns `{ artifactId, resourceUri, uploadUrl, bytesRef }` (`bytesRef` = the artifact id, naming it separately per `05`'s field so the mechanic reads clearly); the agent's host PUTs the bytes to `uploadUrl` using its own HTTP capability (e.g. Claude Code's Bash/curl); call 2 (`bytesRef` set) verifies the object landed in storage (`HeadObject`), records size/checksum, and returns the doc's exact `{ artifactId, resourceUri }` shape. No new tool added; no schema field added — an abandoned call-1-only artifact is the same accepted edge case as the no-draft-status choice below | DECIDED | 05 §4, development/implementation-plan.md Phase 4 |
@@ -203,7 +205,7 @@ Every requirement maps to at least one design doc **and** one BDD scenario. No o
 | Download via MCP Resource, never a tool result | 05 | reviewer-access-via-mcp |
 | Download via frontend (presigned) | 03, 06 | reviewer-access-via-ui |
 | Review summary for Claude Desktop | 05 | reviewer-access-via-mcp |
-| Publishing is MCP-only (no UI publish) | 05, 06, frontend/ | publisher-publish-with-policy |
+| Publishing is available via MCP and the SPA | 05, 06, frontend/ | publisher-publish-with-policy, publisher-publish-via-ui |
 | Frontend: My Artifacts / Shared With Me / filters & search | frontend/ | reviewer-access-via-ui |
 | Access audit trail (ui / share_link / mcp) | 04, models/access-event | reviewer-access-via-ui, reviewer-access-via-mcp |
 | Artifact relationships | 04, models/ | (storage + read API; no v1 UI journey) |

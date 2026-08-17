@@ -2,26 +2,35 @@ import { z } from "zod";
 import { ArtifactKind, AudienceType, ExpiryOption } from "./enums";
 import { paginated } from "./common";
 
+/** Audience + expiry, unrefined — the shared base for AccessPolicyInput (policy edits) and
+ * CreateArtifactInput (publish), so the "audience requires emails/groups" rule can't drift
+ * between them. */
+const AudiencePolicyFields = z.object({
+  audienceType: AudienceType,
+  /** Required when audienceType === "specific_users". */
+  userEmails: z.array(z.string().email()).optional(),
+  /** Required when audienceType === "user_groups". */
+  groupNames: z.array(z.string().min(1)).optional(),
+  expiry: ExpiryOption,
+});
+
+/** Shared shape both audience-validation rules below check against — plain predicates, not a
+ * generic schema-transforming helper, so `.refine()`'s output type stays exact per call site
+ * instead of widening through a generic `ZodObject<any, ...>` constraint. */
+interface AudiencePolicyShape {
+  audienceType: AudienceType;
+  userEmails?: string[];
+  groupNames?: string[];
+}
+const specificUsersHaveEmails = (p: AudiencePolicyShape) =>
+  p.audienceType !== "specific_users" || (p.userEmails?.length ?? 0) > 0;
+const userGroupsHaveGroups = (p: AudiencePolicyShape) =>
+  p.audienceType !== "user_groups" || (p.groupNames?.length ?? 0) > 0;
+
 /** The single access policy for an artifact (audience + expiry). */
-export const AccessPolicyInput = z
-  .object({
-    audienceType: AudienceType,
-    /** Required when audienceType === "specific_users". */
-    userEmails: z.array(z.string().email()).optional(),
-    /** Required when audienceType === "user_groups". */
-    groupNames: z.array(z.string().min(1)).optional(),
-    expiry: ExpiryOption,
-  })
-  .refine(
-    (p) =>
-      p.audienceType !== "specific_users" ||
-      (p.userEmails?.length ?? 0) > 0,
-    { message: "specific_users requires at least one userEmail" },
-  )
-  .refine(
-    (p) => p.audienceType !== "user_groups" || (p.groupNames?.length ?? 0) > 0,
-    { message: "user_groups requires at least one groupName" },
-  );
+export const AccessPolicyInput = AudiencePolicyFields.refine(specificUsersHaveEmails, {
+  message: "specific_users requires at least one userEmail",
+}).refine(userGroupsHaveGroups, { message: "user_groups requires at least one groupName" });
 export type AccessPolicyInput = z.infer<typeof AccessPolicyInput>;
 
 /** Classification metadata captured at publish time (drives frontend filters). */
@@ -35,6 +44,36 @@ export const ArtifactMetadataInput = z.object({
 });
 export type ArtifactMetadataInput = z.infer<typeof ArtifactMetadataInput>;
 
+/** POST /api/artifacts body — creates a pending artifact + policy, backing both the MCP
+ * `publish_artifact` tool's REST-equivalent and the SPA's "Publish New Artifact" modal.
+ *
+ * Deliberately does NOT apply the specificUsersHaveEmails/userGroupsHaveGroups rules that
+ * AccessPolicyInput enforces: those rules exist to stop an *owner editing a live policy* from
+ * saving a nonsensical "specific people, but I picked nobody" state. At create time,
+ * `audienceType: "specific_users", userEmails: []` is the SPA's intentional safe default — a
+ * private, owner-only artifact — not a mistake to reject. Matches the MCP `publish_artifact`
+ * tool's own schema (schemas.ts `PublishArtifactInput`), which never applied these rules either. */
+export const CreateArtifactInput = AudiencePolicyFields.extend({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  fileName: z.string().min(1),
+  contentType: z.string().min(1),
+}).merge(ArtifactMetadataInput);
+export type CreateArtifactInput = z.infer<typeof CreateArtifactInput>;
+
+/** POST /api/artifacts response — a short-lived presigned PUT for the file bytes. */
+export const CreateArtifactResponse = z.object({
+  artifactId: z.string().uuid(),
+  uploadUrl: z.string().url(),
+});
+export type CreateArtifactResponse = z.infer<typeof CreateArtifactResponse>;
+
+/** POST /api/artifacts/:id/finalize body — confirms the presigned-PUT landed. */
+export const FinalizeArtifactInput = z.object({
+  checksumSha256: z.string().optional(),
+});
+export type FinalizeArtifactInput = z.infer<typeof FinalizeArtifactInput>;
+
 /** Row shape for lists (My Artifacts / Shared With Me / MCP tables). */
 export const ArtifactSummary = z.object({
   id: z.string().uuid(),
@@ -47,7 +86,7 @@ export const ArtifactSummary = z.object({
    * `kind` for display when unset (e.g. MCP list tables, docs/architecture/05 §4). */
   format: z.string().nullable(),
   sizeBytes: z.number().int().nonnegative(),
-  publisherName: z.string().nullable(),
+  publisherName: z.string(),
   publishedAt: z.string().datetime(),
   audienceType: AudienceType,
   expiresAt: z.string().datetime().nullable(),

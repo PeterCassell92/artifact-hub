@@ -41,8 +41,9 @@ function CodeBlock({ code }: { code: string }) {
 
 /**
  * /get-started — explains how to connect an agent (Claude Code / Claude Desktop) to the MCP
- * server. Publishing/discovery/comment/share all happen through the agent — there is no
- * publish/upload screen in this SPA (docs/frontend README, docs/architecture/05).
+ * server. Discovery/comment/share and publishing are both available conversationally through the
+ * agent, or this SPA's own Dashboard "Publish New Artifact" button (docs/frontend README,
+ * docs/architecture/05).
  */
 export function GetStartedPage() {
   return (
@@ -50,10 +51,10 @@ export function GetStartedPage() {
       <div>
         <h1 className="text-lg font-semibold text-neutral-900">Get started</h1>
         <p className="mt-2 max-w-2xl text-sm text-neutral-600">
-          Artifact Hub is published to and managed from your AI agent, not this web app — the web
-          app is for viewing, commenting, sharing, and managing access. Connect Claude Code or
-          Claude Desktop to the Artifact Hub MCP server below, then ask your agent to publish,
-          list, or share an artifact.
+          Artifact Hub can be published to from either your AI agent or this web app. Connect
+          Claude Code or Claude Desktop to the Artifact Hub MCP server below to publish, list, or
+          share artifacts conversationally — or use the &quot;Publish New Artifact&quot; button on
+          your Dashboard to upload a file directly.
         </p>
       </div>
 

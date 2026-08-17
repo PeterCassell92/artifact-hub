@@ -54,7 +54,7 @@ describe("AdminUsersPage", () => {
       data: {
         id: "admin-self",
         email: "self@test.local",
-        name: null,
+        name: "Self Admin",
         role: "admin",
         status: "active",
         groupNames: [],
@@ -144,7 +144,7 @@ describe("AdminUsersPage", () => {
         {
           id: "admin-self",
           email: "self@test.local",
-          name: null,
+          name: "Self Admin",
           role: "admin",
           status: "active",
           groupNames: [],

@@ -1,5 +1,5 @@
 import type { User } from "@prisma/client";
-import type { Role, UserView } from "contracts";
+import type { PublicUserView, Role, UserView } from "contracts";
 import { prisma } from "../db";
 
 const withGroups = { include: { memberships: { include: { group: true } } } } as const;
@@ -47,9 +47,28 @@ export function findUsersInGroups(groupIds: string[]): Promise<User[]> {
 }
 
 /** Every active user — the `public_authenticated` branch of resolving a policy to concrete
- * recipients (database-service/artifactRecipients.ts). */
+ * recipients (database-service/artifactRecipients.ts), and the source list for GET /api/users
+ * (the "Specific people" audience picker). */
 export function listActiveUsers(): Promise<User[]> {
-  return prisma.user.findMany({ where: { status: "active" } });
+  return prisma.user.findMany({ where: { status: "active" }, orderBy: { email: "asc" } });
+}
+
+export function toPublicUserView(user: User): PublicUserView {
+  return { id: user.id, email: user.email, name: user.name };
+}
+
+/** Every user requires a display name (schema.prisma `User.name`, NOT NULL) — this derives a
+ * reasonable placeholder from an email's local-part (e.g. "peter.cassell@x.com" -> "Peter
+ * Cassell") for the rare paths with no admin-provided name to fall back to (the defensive
+ * upsert-create branch in `acceptInvitation`). Mirrors the migration's own SQL backfill. */
+export function nameFromEmail(email: string): string {
+  const localPart = email.split("@")[0] ?? email;
+  return localPart
+    .replace(/[._]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 }
 
 /**

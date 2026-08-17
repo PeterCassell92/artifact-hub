@@ -19,7 +19,7 @@ describe("sendAccessRevokedEmail", () => {
 
   async function makeArtifact() {
     const owner = await prisma.user.create({
-      data: { email: `owner-${Math.random()}@test.local`, idpSub: `idp|${Math.random()}`, status: "active" },
+      data: { email: `owner-${Math.random()}@test.local`, name: "Test Owner", idpSub: `idp|${Math.random()}`, status: "active" },
     });
     return prisma.artifact.create({
       data: {

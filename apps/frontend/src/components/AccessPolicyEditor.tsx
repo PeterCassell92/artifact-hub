@@ -1,18 +1,16 @@
 import { useState } from "react";
 import type { AccessPolicyInput, ArtifactDetail, AudienceType, ExpiryOption } from "contracts";
-import { useListGroupsQuery, useRevokeAccessMutation, useUpdatePolicyMutation } from "../store/api";
+import {
+  useListGroupsQuery,
+  useListUsersQuery,
+  useRevokeAccessMutation,
+  useUpdatePolicyMutation,
+} from "../store/api";
 import { useAppDispatch } from "../store/hooks";
 import { notify } from "../store/slices/notifications";
-import { artifactStatusLabel, computeExpiresAtPreview, formatPublishedAtWithTime } from "../lib/formatters";
-import { InfoTooltip } from "./InfoTooltip";
+import { artifactStatusLabel, audiencePolicyMissing } from "../lib/formatters";
+import { AccessPolicyFields } from "./AccessPolicyFields";
 import { Modal } from "./Modal";
-
-const EXPIRY_OPTIONS: { value: ExpiryOption; label: string }[] = [
-  { value: "24h", label: "24 hours" },
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-  { value: "never", label: "Never" },
-];
 
 const STATUS_COLOR: Record<ReturnType<typeof artifactStatusLabel>, string> = {
   Accessible: "text-neutral-500",
@@ -20,30 +18,21 @@ const STATUS_COLOR: Record<ReturnType<typeof artifactStatusLabel>, string> = {
   Revoked: "text-red-600",
 };
 
-function splitList(value: string): string[] {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function toggleGroupName(selected: string[], name: string): string[] {
-  return selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name];
-}
-
 /** Audience + expiry (24h/7d/30d/never) — narrowing is what revocation actually is (03 §4),
  * plus an explicit instant "Revoke all access" cutoff (03 §1a), independent of those fields.
  * Owner-only, gated by artifact.canManagePolicy. */
 export function AccessPolicyEditor({ artifact }: { artifact: ArtifactDetail }) {
   const [audienceType, setAudienceType] = useState<AudienceType>(artifact.audienceType);
-  const [userEmails, setUserEmails] = useState("");
+  const [userEmails, setUserEmails] = useState<string[]>([]);
   const [groupNames, setGroupNames] = useState<string[]>([]);
   const [expiry, setExpiry] = useState<ExpiryOption>("never");
   const [updatePolicy, { isLoading }] = useUpdatePolicyMutation();
   const [revokeAccess, { isLoading: isRevoking }] = useRevokeAccessMutation();
-  // Backend-driven — not the audience owner's own memberships, the full org group catalogue
-  // (matches what the equivalent MCP `list_groups` tool exposes to any authenticated caller).
+  // Backend-driven — not the audience owner's own memberships, the full org group/user
+  // catalogue (matches what the equivalent MCP `list_groups` tool exposes to any authenticated
+  // caller). Selection-only combo boxes, never free text (03 §1).
   const { data: groups } = useListGroupsQuery(undefined, { skip: audienceType !== "user_groups" });
+  const { data: users } = useListUsersQuery(undefined, { skip: audienceType !== "specific_users" });
   const dispatch = useAppDispatch();
 
   // While revoked, the form starts disabled — stale settings shouldn't look editable/live.
@@ -54,14 +43,21 @@ export function AccessPolicyEditor({ artifact }: { artifact: ArtifactDetail }) {
   const locked = artifact.revoked && !unlocked;
   const status = artifactStatusLabel(artifact);
 
-  const previewExpiresAt = computeExpiresAtPreview(expiry, artifact.publishedAt);
-  const willExpireImmediately = previewExpiresAt !== null && previewExpiresAt <= new Date();
+  // Gated on submit, not live-disabled: userEmails/groupNames always start empty regardless of
+  // the artifact's actual current audience, so a live-disabled Save would show disabled on mount
+  // for the common case of an already-specific_users/user_groups artifact. Derived, not sticky —
+  // self-clears the moment the user fixes the input, no second Save click needed.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const { emailsMissing, groupsMissing } = audiencePolicyMissing(audienceType, userEmails, groupNames);
 
   async function handleSubmit() {
+    setSubmitAttempted(true);
+    if (locked || emailsMissing || groupsMissing) return;
+
     const policy: AccessPolicyInput = {
       audienceType,
       expiry,
-      ...(audienceType === "specific_users" ? { userEmails: splitList(userEmails) } : {}),
+      ...(audienceType === "specific_users" ? { userEmails } : {}),
       ...(audienceType === "user_groups" ? { groupNames } : {}),
     };
 
@@ -92,83 +88,21 @@ export function AccessPolicyEditor({ artifact }: { artifact: ArtifactDetail }) {
       </div>
 
       <div className="mt-3 flex flex-col gap-3 text-sm">
-        <label className="flex flex-col gap-1">
-          Audience
-          <select
-            value={audienceType}
-            disabled={locked}
-            onChange={(e) => setAudienceType(e.target.value as AudienceType)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 disabled:bg-neutral-100 disabled:text-neutral-400"
-          >
-            <option value="public_authenticated">Anyone signed in</option>
-            <option value="specific_users">Specific people</option>
-            <option value="user_groups">Groups</option>
-          </select>
-        </label>
-
-        {audienceType === "specific_users" && (
-          <label className="flex flex-col gap-1">
-            User emails (comma-separated)
-            <input
-              value={userEmails}
-              disabled={locked}
-              onChange={(e) => setUserEmails(e.target.value)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 disabled:bg-neutral-100 disabled:text-neutral-400"
-            />
-          </label>
-        )}
-
-        {audienceType === "user_groups" && (
-          <fieldset className="flex flex-col gap-1" disabled={locked}>
-            <legend>Groups</legend>
-            <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-md border border-neutral-300 px-3 py-1.5">
-              {groups?.length === 0 && <p className="text-neutral-500">No groups exist yet.</p>}
-              {groups?.map((group) => (
-                <label key={group.id} className="flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={groupNames.includes(group.name)}
-                    onChange={() => setGroupNames((prev) => toggleGroupName(prev, group.name))}
-                  />
-                  {group.name}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        )}
-
-        <div className="flex flex-col gap-1">
-          <span className="flex items-center gap-1.5">
-            <label htmlFor="access-policy-expiry">Expiry</label>
-            <InfoTooltip label="Relative to when this artifact was published, not to when you change this setting." />
-          </span>
-          <select
-            id="access-policy-expiry"
-            value={expiry}
-            disabled={locked}
-            onChange={(e) => setExpiry(e.target.value as ExpiryOption)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 disabled:bg-neutral-100 disabled:text-neutral-400"
-          >
-            {EXPIRY_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <p className="text-xs text-neutral-500">
-          {previewExpiresAt
-            ? `Access will expire ${formatPublishedAtWithTime(previewExpiresAt.toISOString())}.`
-            : "Access never expires."}
-        </p>
-
-        {willExpireImmediately && !locked && (
-          <p className="text-sm text-red-600" role="alert">
-            This expiry has already passed relative to when this artifact was published — saving
-            will immediately revoke access for everyone else.
-          </p>
-        )}
+        <AccessPolicyFields
+          audienceType={audienceType}
+          onAudienceTypeChange={setAudienceType}
+          userEmails={userEmails}
+          onUserEmailsChange={setUserEmails}
+          users={users}
+          groupNames={groupNames}
+          onGroupNamesChange={setGroupNames}
+          groups={groups}
+          expiry={expiry}
+          onExpiryChange={setExpiry}
+          previewBaseDate={artifact.publishedAt}
+          disabled={locked}
+          showValidation={submitAttempted}
+        />
 
         <div className="flex items-center gap-2">
           <button

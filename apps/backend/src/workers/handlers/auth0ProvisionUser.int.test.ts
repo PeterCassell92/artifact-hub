@@ -30,7 +30,7 @@ describe("provisionAuth0User", () => {
 
   async function makeUser() {
     return prisma.user.create({
-      data: { email: `invitee-${Math.random()}@test.local`, status: "active" },
+      data: { email: `invitee-${Math.random()}@test.local`, name: "Test Invitee", status: "active" },
     });
   }
 

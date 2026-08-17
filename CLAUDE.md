@@ -18,8 +18,11 @@ backend (Express) serves both `/api/*` and `/mcp` over a shared `core` domain la
 - **No anonymous access** — every viewer is authenticated. See [03](docs/architecture/03-authorization-and-access-control.md).
 - **Passwordless auth (magic link)** — all users incl. admins sign in via emailed magic link; no
   passwords, no password reset. See [02](docs/architecture/02-auth-identity-and-admin.md).
-- **Publishing is MCP-only** — there is **no upload/publish screen in the SPA**. Users publish via
-  their agent (`publish_artifact`); the frontend is for consuming/managing. See [frontend/](docs/frontend/).
+- **Publishing is available two ways** — via an agent (`publish_artifact`, MCP) or via the SPA's
+  Dashboard ("Publish New Artifact"). Both paths converge on the same `core` create+finalize
+  logic; the UI path only ever collects a file — it always creates a private, owner-only,
+  never-expiring artifact (title = filename) that the owner then configures via the existing
+  access-policy editor. See [frontend/](docs/frontend/).
 - **One owner-controlled access policy per artifact**, re-evaluated on every request → revocation
   is instant; **share links are pure locators**, never bearer tokens of access.
 - **The backend makes no LLM calls** — all logic is deterministic. Review summaries are an MCP
@@ -75,8 +78,8 @@ package.json      root: private, workspaces + fan-out scripts
 ```
 
 Docs map: [architecture/](docs/architecture/) (decisions, entry point `01`), [models/](docs/models/)
-(field-level domain models — schema source of truth), [frontend/](docs/frontend/) (UX; no publish
-UI), [user-journeys/](docs/user-journeys/) (BDD), [development/](docs/development/) (dev tooling +
+(field-level domain models — schema source of truth), [frontend/](docs/frontend/) (UX, incl. the
+Publish New Artifact flow), [user-journeys/](docs/user-journeys/) (BDD), [development/](docs/development/) (dev tooling +
 [implementation-plan.md](docs/development/implementation-plan.md): **build order / handoff plan —
 start here when implementing**; [dev-and-testing-phases-guide.md](docs/development/dev-and-testing-phases-guide.md): local stack,
 test phases, MCP client config; [bruno-mcp-token.md](docs/development/bruno-mcp-token.md): Bruno

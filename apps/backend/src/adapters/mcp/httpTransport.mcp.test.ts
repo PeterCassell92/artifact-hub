@@ -39,7 +39,7 @@ describe("POST /mcp (HTTP black-box)", () => {
   });
 
   async function makeActiveUser(email: string) {
-    return prisma.user.create({ data: { email, idpSub: `idp|${email}`, status: "active" } });
+    return prisma.user.create({ data: { email, name: "Test User", idpSub: `idp|${email}`, status: "active" } });
   }
 
   function tokenFor(idpSub: string, audience = MCP_AUDIENCE) {
@@ -109,7 +109,12 @@ describe("POST /mcp (HTTP black-box)", () => {
 
   it("403s a disabled user's token", async () => {
     const user = await prisma.user.create({
-      data: { email: `disabled-${randomUUID()}@test.local`, idpSub: `idp|disabled-${randomUUID()}`, status: "disabled" },
+      data: {
+        email: `disabled-${randomUUID()}@test.local`,
+        name: "Test Disabled",
+        idpSub: `idp|disabled-${randomUUID()}`,
+        status: "disabled",
+      },
     });
     await rpcRequest(tokenFor(user.idpSub as string), { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }).expect(
       403,
@@ -135,6 +140,7 @@ describe("POST /mcp (HTTP black-box)", () => {
         "get_artifact",
         "get_user_details",
         "list_artifacts",
+        "list_comments",
         "list_groups",
         "list_shared_with_me",
         "publish_artifact",

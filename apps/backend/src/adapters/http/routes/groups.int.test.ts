@@ -33,7 +33,13 @@ describe("GET /api/groups", () => {
   it("200s for a non-admin member (unlike /api/admin/groups) and lists all groups", async () => {
     const group = await prisma.group.create({ data: { name: `group-${Math.random()}` } });
     const member = await prisma.user.create({
-      data: { email: `member-${Math.random()}@test.local`, idpSub: `idp|${Math.random()}`, status: "active", role: "member" },
+      data: {
+        email: `member-${Math.random()}@test.local`,
+        name: "Test User",
+        idpSub: `idp|${Math.random()}`,
+        status: "active",
+        role: "member",
+      },
     });
 
     const res = await request(app)

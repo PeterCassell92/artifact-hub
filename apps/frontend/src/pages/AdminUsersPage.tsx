@@ -41,6 +41,10 @@ export function AdminUsersPage() {
       setEmailError("Enter a valid email address.");
       return;
     }
+    if (!name.trim()) {
+      setEmailError("Enter a name.");
+      return;
+    }
     if (groupIds.length === 0) {
       setEmailError("Select at least one group.");
       return;
@@ -48,7 +52,7 @@ export function AdminUsersPage() {
     setEmailError(null);
 
     try {
-      await inviteUser({ email, name: name.trim() || undefined, role, groupIds }).unwrap();
+      await inviteUser({ email, name: name.trim(), role, groupIds }).unwrap();
       dispatch(notify("success", `Invited ${email}`));
       setEmail("");
       setName("");
@@ -107,6 +111,7 @@ export function AdminUsersPage() {
             <input
               id="invite-name"
               type="text"
+              required
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="mt-1 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
@@ -171,7 +176,7 @@ export function AdminUsersPage() {
           {users?.map((user) => (
             <tr key={user.id} className="border-b border-neutral-100">
               <td className="py-2">{user.email}</td>
-              <td className="py-2">{user.name ?? "—"}</td>
+              <td className="py-2">{user.name}</td>
               <td className="py-2">{user.status}</td>
               <td className="py-2">{user.role}</td>
               <td className="py-2">{user.groupNames.join(", ") || "—"}</td>

@@ -51,6 +51,7 @@ describe("requireAuth / requireAdmin", () => {
     return prisma.user.create({
       data: {
         email: over.email ?? `user-${Math.random()}@test.local`,
+        name: "Test User",
         idpSub: over.idpSub ?? `idp|${Math.random()}`,
         status: over.status ?? "active",
         role: over.role ?? "member",

@@ -17,14 +17,14 @@ import {
   updateArtifactPolicy,
 } from "../../database-service/artifacts";
 import { buildAccessRevokedOutboxEvents, buildNewAccessOutboxEvents } from "../../database-service/artifactRecipients";
-import { createComment } from "../../database-service/comments";
+import { createComment, listComments } from "../../database-service/comments";
 import { recordAdminAuditLog } from "../../database-service/adminAuditLog";
 import { createShareLink } from "../../database-service/shareLinks";
 import { findUserWithGroupsById, toUserView } from "../../database-service/adminUsers";
 import { listGroups, toGroupView } from "../../database-service/groups";
 import { getObjectBuffer } from "../../storage/s3";
 import { getEnv } from "../../env";
-import { groupsTable, ownedArtifactsTable, sharedWithMeTable } from "./format";
+import { commentsTable, groupsTable, ownedArtifactsTable, sharedWithMeTable } from "./format";
 import {
   CommentOnArtifactInput,
   CreateShareLinkInput,
@@ -32,6 +32,7 @@ import {
   GetUserDetailsInput,
   isValidPublishArtifactInput,
   ListArtifactsInput,
+  ListCommentsInput,
   ListGroupsInput,
   ListSharedWithMeInput,
   PublishArtifactInput,
@@ -91,6 +92,18 @@ Arguments: id (artifact uuid), body (comment text, 1-10,000 characters).
 Result is metadata-only: { commentId, createdAt }.
 
 Example: comment_on_artifact({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", body: "Looks good — ship it." }).`;
+
+const LIST_COMMENTS_DESCRIPTION = `Reads back the comments left on an artifact — author name, body, and date, oldest first. Use when the user asks to see the feedback/reviews/comments on an artifact, or before adding a new comment to check what's already been said.
+
+Requires the same access as viewing the artifact (reading comments = viewing) — if the caller can't view it, they can't read its comments either; this is not a separate permission from get_artifact/comment_on_artifact.
+
+Do NOT use this to post a comment — use comment_on_artifact for that. Do NOT use this to get an LLM-generated summary of the comments — use the summarise_artifact_reviews prompt for that; this tool returns the raw comments themselves.
+
+Arguments: id (artifact uuid).
+
+Result is metadata-only: { comments: [{ id, authorName, body, createdAt }] }, plus a markdown table.
+
+Example: list_comments({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
 
 const CREATE_SHARE_LINK_DESCRIPTION = `Mints a shareable locator link (/s/<token>) for an artifact the caller can view — owner or not. Use when the user asks for a link to send someone.
 
@@ -314,6 +327,21 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
 
       const comment = await createComment(artifact.id, viewer.id, args.body, artifact.ownerId);
       return toolJson({ commentId: comment.id, createdAt: comment.createdAt });
+    }),
+  );
+
+  server.registerTool(
+    "list_comments",
+    { title: "List comments", description: LIST_COMMENTS_DESCRIPTION, inputSchema: ListCommentsInput },
+    wrap("list_comments", async (args) => {
+      const artifact = await findArtifactForDetail(args.id);
+      if (!artifact) return toolError("Artifact not found.");
+
+      const decision = canView(viewer, toPolicy(artifact), new Date());
+      if (!decision.allowed) return toolError(`Access denied (${decision.reason}).`);
+
+      const comments = await listComments(artifact.id);
+      return toolJson({ comments }, commentsTable(comments));
     }),
   );
 

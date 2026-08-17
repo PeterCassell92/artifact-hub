@@ -80,6 +80,7 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 | `list_shared_with_me` | List artifacts shared **to** the caller, optional time window | `{ sinceHours?, cursor?, limit? }` | **all** results returned; **first 10 rendered** as a markdown table (numeric id, filetype, publishingUserName, publicationDate) |
 | `get_artifact` | Fetch **small** content inline for reasoning | `{ id }` | small image → image block; small text/PDF → embedded resource; else → pointer to `artifact://<id>` |
 | `comment_on_artifact` | Add an attributable comment | `{ id, body }` | `{ commentId, createdAt }` |
+| `list_comments` | Read back an artifact's comments, oldest first | `{ id }` | `{ comments: [{ id, authorName, body, createdAt }] }` + markdown table |
 | `create_share_link` | Mint a locator link for an artifact you can view (owner or not) | `{ id }` | `{ url }` |
 | `set_access_policy` | Change an owned artifact's audience/expiry — narrowing is the general revocation mechanism | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
 | `revoke_access` | Instant, whole-artifact cutoff for an owned artifact — independent of audience/expiry (`03` §1a) | `{ id }` | `{ ok, revokedAt }` |
@@ -165,6 +166,7 @@ deliberately not used in v1.
 | Download a selected artifact without bloating context | read Resource `artifact://<id>`; host-mediated save |
 | Never return the file as a tool result | Resources only; tools stay metadata-only |
 | Comment via agent | `comment_on_artifact` |
+| Read back an artifact's comments | `list_comments` |
 | Summarise the reviews | Prompt `summarise_artifact_reviews` |
 | Revoke access via agent | `set_access_policy` |
 

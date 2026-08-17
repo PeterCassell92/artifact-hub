@@ -26,7 +26,7 @@ describe("artifactRecipients", () => {
 
   async function makeUser(status: "active" | "invited" | "disabled" = "active") {
     return prisma.user.create({
-      data: { email: `user-${Math.random()}@test.local`, idpSub: `idp|${Math.random()}`, status },
+      data: { email: `user-${Math.random()}@test.local`, name: "Test User", idpSub: `idp|${Math.random()}`, status },
     });
   }
 

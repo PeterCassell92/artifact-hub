@@ -11,6 +11,7 @@
  */
 import { prisma } from "../src/db";
 import { createInvitation } from "../src/database-service/invitations";
+import { nameFromEmail } from "../src/database-service/adminUsers";
 
 const INITIAL_GROUPS = ["Product", "Development"];
 
@@ -43,8 +44,11 @@ async function main() {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) continue; // already seeded (or otherwise provisioned) — never re-invite
 
-    const user = await prisma.user.create({ data: { email, role: "admin", status: "invited" } });
-    await createInvitation({ email, role: "admin", groupIds: [], invitedById: user.id });
+    // Every user requires a display name; seeded admins have no admin-provided one yet, so derive
+    // a placeholder from the email the same way the require_user_name migration's backfill does.
+    const name = nameFromEmail(email);
+    const user = await prisma.user.create({ data: { email, name, role: "admin", status: "invited" } });
+    await createInvitation({ email, name, role: "admin", groupIds: [], invitedById: user.id });
     created++;
   }
 

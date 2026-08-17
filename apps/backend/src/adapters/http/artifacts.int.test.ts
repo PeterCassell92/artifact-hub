@@ -33,7 +33,7 @@ describe("GET /api/artifacts*", () => {
 
   async function makeActiveUser(email: string) {
     return prisma.user.create({
-      data: { email, idpSub: `idp|${email}`, status: "active" },
+      data: { email, name: "Test User", idpSub: `idp|${email}`, status: "active" },
     });
   }
 
@@ -353,7 +353,7 @@ describe("GET /api/artifacts*", () => {
         .expect(404);
     });
 
-    it("falls back publisherName to the owner's email when they have no display name set", async () => {
+    it("returns the owner's display name as publisherName — every user has one (name is NOT NULL)", async () => {
       const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
       const artifact = await makeArtifact({ ownerId: owner.id, audienceType: "public_authenticated" });
 
@@ -362,7 +362,7 @@ describe("GET /api/artifacts*", () => {
         .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
         .expect(200);
 
-      expect(res.body.publisherName).toBe(owner.email);
+      expect(res.body.publisherName).toBe(owner.name);
     });
 
     it("200s for a user in the audience and writes an allowed AccessEvent", async () => {
@@ -855,6 +855,157 @@ describe("GET /api/artifacts*", () => {
         .expect(200);
 
       expect(res.body.url).toContain(artifact.storageKey);
+    });
+  });
+
+  describe("POST /api/artifacts", () => {
+    it("creates a pending, private artifact and returns a presigned upload URL", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+
+      const res = await request(app)
+        .post("/api/artifacts")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({
+          title: "report.pdf",
+          fileName: "report.pdf",
+          contentType: "application/pdf",
+          audienceType: "specific_users",
+          userEmails: [],
+          expiry: "never",
+        })
+        .expect(201);
+
+      expect(res.body.uploadUrl).toMatch(/^http/);
+
+      const stored = await prisma.artifact.findUnique({ where: { id: res.body.artifactId } });
+      expect(stored).toMatchObject({ ownerId: owner.id, audienceType: "specific_users" });
+      expect(Number(stored!.sizeBytes)).toBe(0);
+      expect(stored!.expiresAt).toBeNull();
+
+      const allowedUsers = await prisma.artifactAllowedUser.findMany({ where: { artifactId: res.body.artifactId } });
+      expect(allowedUsers).toHaveLength(0);
+    });
+
+    it("is private by default — the owner can view it immediately, nobody else can", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const other = await makeActiveUser(`other-${Math.random()}@test.local`);
+
+      const created = await request(app)
+        .post("/api/artifacts")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({
+          title: "report.pdf",
+          fileName: "report.pdf",
+          contentType: "application/pdf",
+          audienceType: "specific_users",
+          userEmails: [],
+          expiry: "never",
+        })
+        .expect(201);
+
+      await request(app)
+        .get(`/api/artifacts/${created.body.artifactId}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      await request(app)
+        .get(`/api/artifacts/${created.body.artifactId}`)
+        .set("Authorization", `Bearer ${tokenFor(other.idpSub as string)}`)
+        .expect(403);
+    });
+
+    it("400s when required fields are missing", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+
+      await request(app)
+        .post("/api/artifacts")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({ title: "Incomplete" })
+        .expect(400);
+    });
+
+    it("400s for an unknown userEmail", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+
+      await request(app)
+        .post("/api/artifacts")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .send({
+          title: "report.pdf",
+          fileName: "report.pdf",
+          contentType: "application/pdf",
+          audienceType: "specific_users",
+          userEmails: ["nobody@test.local"],
+          expiry: "never",
+        })
+        .expect(400);
+    });
+  });
+
+  describe("POST /api/artifacts/:id/finalize", () => {
+    async function createPending(idpSub: string) {
+      const created = await request(app)
+        .post("/api/artifacts")
+        .set("Authorization", `Bearer ${tokenFor(idpSub)}`)
+        .send({
+          title: "report.pdf",
+          fileName: "report.pdf",
+          contentType: "text/plain",
+          audienceType: "specific_users",
+          userEmails: [],
+          expiry: "never",
+        })
+        .expect(201);
+      return created.body as { artifactId: string; uploadUrl: string };
+    }
+
+    it("records the file's real size once the upload has actually landed", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const { artifactId, uploadUrl } = await createPending(owner.idpSub as string);
+
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        body: "the actual bytes",
+        headers: { "Content-Type": "text/plain" },
+      });
+      expect(putRes.ok).toBe(true);
+
+      const res = await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      expect(res.body.sizeBytes).toBe(Buffer.byteLength("the actual bytes"));
+    });
+
+    it("409s when the upload hasn't landed yet", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const { artifactId } = await createPending(owner.idpSub as string);
+
+      await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(409);
+    });
+
+    it("403s a non-owner trying to finalize", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const other = await makeActiveUser(`other-${Math.random()}@test.local`);
+      const { artifactId } = await createPending(owner.idpSub as string);
+
+      await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(other.idpSub as string)}`)
+        .expect(403);
+    });
+
+    it("404s for an unknown artifact id", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+
+      await request(app)
+        .post("/api/artifacts/00000000-0000-0000-0000-000000000000/finalize")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(404);
     });
   });
 });

@@ -14,7 +14,9 @@ import { AdminPage } from "./pages/AdminPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminGroupsPage } from "./pages/AdminGroupsPage";
 
-/** Route map per docs/frontend/01 §2. No /publish route — publishing is MCP-only. */
+/** Route map per docs/frontend/01 §2. Publishing is available both via an agent (MCP
+ * publish_artifact) and the Dashboard's Publish New Artifact modal — no dedicated /publish
+ * route either way. */
 export default function App() {
   return (
     <Routes>

@@ -1,5 +1,5 @@
 import { format, formatDistanceToNow } from "date-fns";
-import type { ArtifactSummary, ExpiryOption } from "contracts";
+import type { ArtifactSummary, AudienceType, ExpiryOption } from "contracts";
 
 export function formatPublishedAt(iso: string): string {
   return format(new Date(iso), "MMM d, yyyy");
@@ -41,6 +41,22 @@ export function artifactStatusLabel(
   if (artifact.revoked) return "Revoked";
   if (artifact.isExpired) return "Expired";
   return "Accessible";
+}
+
+/** Shared by AccessPolicyEditor (edit) and PublishArtifactModal (create) — an audience of
+ * specific_users/user_groups with nobody actually picked is never a valid submission, in either
+ * flow, so both gate on the same predicate rather than risking the rule drifting apart.
+ * `userEmails` is a selection (from the "Specific people" combo box, PublicUserView-backed), not
+ * free text — see AccessPolicyFields. */
+export function audiencePolicyMissing(
+  audienceType: AudienceType,
+  userEmails: string[],
+  groupNames: string[],
+): { emailsMissing: boolean; groupsMissing: boolean } {
+  return {
+    emailsMissing: audienceType === "specific_users" && userEmails.length === 0,
+    groupsMissing: audienceType === "user_groups" && groupNames.length === 0,
+  };
 }
 
 export function audienceLabel(audienceType: ArtifactSummary["audienceType"]): string {

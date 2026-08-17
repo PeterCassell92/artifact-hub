@@ -34,7 +34,12 @@ describe("artifact notification outbox wiring", () => {
 
   async function makeActiveUser(email?: string) {
     return prisma.user.create({
-      data: { email: email ?? `user-${Math.random()}@test.local`, idpSub: `idp|${Math.random()}`, status: "active" },
+      data: {
+        email: email ?? `user-${Math.random()}@test.local`,
+        name: "Test User",
+        idpSub: `idp|${Math.random()}`,
+        status: "active",
+      },
     });
   }
 

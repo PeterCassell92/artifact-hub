@@ -7,14 +7,19 @@ import {
   ArtifactListQuery,
   ArtifactListResponse,
   CommentView,
+  CreateArtifactInput,
+  CreateArtifactResponse,
   CreateCommentInput,
   DownloadUrlResponse,
+  FinalizeArtifactInput,
   ShareLinkView,
 } from "contracts";
 import { canCreateShareLink, canManagePolicy, canView } from "../../../core/authz";
 import { computeExpiresAt } from "../../../core/policy";
 import {
   checkViewAndAudit,
+  createArtifactPending,
+  finalizeArtifact,
   findArtifactForDetail,
   getArtifactFacets,
   listOwnedArtifacts,
@@ -61,6 +66,48 @@ export function createArtifactsRouter(): Router {
     res.json(ArtifactListResponse.parse({ items: items.map((a) => toSummary(a, now)), nextCursor }));
   });
 
+  // POST /api/artifacts — creates a pending artifact + returns a presigned PUT for the bytes.
+  // No canView/canManagePolicy check — there's no existing artifact yet; the authenticated caller
+  // simply becomes the owner. Backs both the SPA's "Publish New Artifact" modal and (in principle)
+  // any other REST-facing caller; the MCP publish_artifact tool still calls createArtifactPending
+  // directly rather than through this route.
+  router.post("/", async (req, res) => {
+    const body = CreateArtifactInput.safeParse(req.body);
+    if (!body.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact input", body.error.flatten());
+      return;
+    }
+
+    const resolved = await resolveAudienceInput(body.data);
+    if (!resolved.ok) {
+      sendError(res, 400, "bad_request", resolved.error, resolved.details);
+      return;
+    }
+
+    const viewer = req.viewer!;
+    const { artifact, uploadUrl } = await createArtifactPending(viewer.id, {
+      title: body.data.title,
+      description: body.data.description,
+      fileName: body.data.fileName,
+      contentType: body.data.contentType,
+      kind: body.data.kind,
+      tags: body.data.tags,
+      sourceTool: body.data.sourceTool,
+      format: body.data.format,
+      language: body.data.language,
+      metadata: body.data.metadata,
+      audienceType: resolved.audienceType,
+      allowedUserIds: resolved.allowedUserIds,
+      allowedGroupIds: resolved.allowedGroupIds,
+      // "now" — this artifact's own createdAt, unlike PUT /policy's edit-time computation which is
+      // relative to an *existing* createdAt. Matches how the MCP tool calls
+      // computeExpiresAt(args.expiry!, new Date()) at creation time.
+      expiresAt: computeExpiresAt(body.data.expiry, new Date()),
+    });
+
+    res.status(201).json(CreateArtifactResponse.parse({ artifactId: artifact.id, uploadUrl }));
+  });
+
   // GET /api/artifacts/facets — distinct filter values the caller can actually use, for
   // populating the frontend's multi-select controls (Phase 7, docs/frontend/02 §2).
   router.get("/facets", async (req, res) => {
@@ -100,6 +147,41 @@ export function createArtifactsRouter(): Router {
     }
 
     res.json(ArtifactDetail.parse(toDetail(artifact, viewer.id, now)));
+  });
+
+  // POST /api/artifacts/:id/finalize — confirms the presigned-PUT upload actually landed
+  // (headObject) before recording size/checksum. Ownership is checked inside finalizeArtifact
+  // itself (reason: "forbidden") — this isn't a policy check, just "do you own this row".
+  router.post("/:id/finalize", async (req, res) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact id");
+      return;
+    }
+    const body = FinalizeArtifactInput.safeParse(req.body ?? {});
+    if (!body.success) {
+      sendError(res, 400, "bad_request", "Invalid finalize input", body.error.flatten());
+      return;
+    }
+
+    const viewer = req.viewer!;
+    const result = await finalizeArtifact(params.data.id, viewer.id, { checksumSha256: body.data.checksumSha256 });
+
+    if (!result.ok) {
+      if (result.reason === "not_found") {
+        sendError(res, 404, "not_found", "Artifact not found");
+        return;
+      }
+      if (result.reason === "forbidden") {
+        sendError(res, 403, "forbidden", "You do not own this artifact");
+        return;
+      }
+      // "object_missing" — the PUT hasn't landed yet; retryable, not a hard client error.
+      sendError(res, 409, "conflict", "The file hasn't finished uploading yet — retry once the PUT completes");
+      return;
+    }
+
+    res.json(ArtifactDetail.parse(toDetail(result.artifact, viewer.id, new Date())));
   });
 
   // GET /api/artifacts/:id/comments — gated by canView; no AccessEvent (only :id and

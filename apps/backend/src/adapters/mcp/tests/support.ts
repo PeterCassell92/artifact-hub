@@ -38,7 +38,7 @@ export async function setupMcpTestContext(): Promise<McpTestContext> {
   const { createMcpServer } = await import("#mcp-server");
 
   async function makeActiveUser(email: string): Promise<User> {
-    return prisma.user.create({ data: { email, idpSub: `idp|${email}`, status: "active" } });
+    return prisma.user.create({ data: { email, name: "Test User", idpSub: `idp|${email}`, status: "active" } });
   }
 
   // `groupIds` are assigned BEFORE the viewer snapshot is built (below) — unlike production, where

@@ -29,17 +29,17 @@ The REST API is the HTTP adapter that serves the SPA (including the admin area) 
 
 ---
 
-> **Publishing is MCP-only.** There is **no create/upload route exposed to the SPA** — new
-> artifacts are created exclusively through the MCP `publish_artifact` path (see `05`). The
-> `POST /api/artifacts` + `finalize` endpoints below back **that agent publish flow** (or an
-> internal `core` call), not a frontend screen. The SPA is view/manage only.
+> **Publishing is available two ways.** `POST /api/artifacts` + `finalize` back both the SPA's
+> "Publish New Artifact" modal (file + access policy, see `../frontend/`) and the MCP
+> `publish_artifact` tool's two-call flow (see `05`), which calls the same underlying `core`
+> functions rather than these HTTP routes directly.
 
 ## 2. Artifact routes
 
 | Method & path | Purpose | Authz |
 |---------------|---------|-------|
-| `POST /api/artifacts` | (MCP publish path) Create artifact metadata + policy; returns a **presigned PUT** for the body | authenticated (becomes owner) |
-| `POST /api/artifacts/:id/finalize` | (MCP publish path) Confirm upload complete (size/mime/checksum recorded) | owner |
+| `POST /api/artifacts` | Create artifact metadata + policy; returns a **presigned PUT** for the body | authenticated (becomes owner) |
+| `POST /api/artifacts/:id/finalize` | Confirm upload complete (size/mime/checksum recorded) | owner |
 | `GET /api/artifacts/:id` | Artifact detail (metadata + policy + can-I-view). **Records an AccessEvent** (`route=ui`, `view`) | `canView` |
 | `GET /api/artifacts` | List artifacts visible to me (filters: `mine`, `sharedWithMe`, `sinceHours`, plus search/facets — see frontend/02) | per-item `canView` |
 | `GET /api/artifacts/:id/download` | Mint ~60s presigned URL and `302` redirect. **Records an AccessEvent** (`route=ui`, `download`) | `canView` |
@@ -119,7 +119,8 @@ SPA ─POST /api/artifacts/:id/finalize ───────▶ Backend (record
 ```
 
 Bytes go straight to Tigris; the backend never buffers large files. The MCP `publish_artifact`
-uses the same mechanism.
+tool's start/finish calls use the same underlying `core` functions as this HTTP flow (not this
+HTTP flow itself).
 
 ---
 

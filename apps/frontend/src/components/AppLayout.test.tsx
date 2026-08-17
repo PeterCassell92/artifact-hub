@@ -34,7 +34,7 @@ function renderLayout() {
 describe("AppLayout", () => {
   it("does not render an Admin link for a non-admin member", () => {
     useGetMeQuery.mockReturnValue({
-      data: { id: "u1", email: "m@test.local", name: null, role: "member", status: "active", groupNames: [], createdAt: "2026-01-01T00:00:00.000Z" },
+      data: { id: "u1", email: "m@test.local", name: "Test Member", role: "member", status: "active", groupNames: [], createdAt: "2026-01-01T00:00:00.000Z" },
     });
 
     renderLayout();
@@ -44,7 +44,7 @@ describe("AppLayout", () => {
 
   it("renders the Admin link outside the main navlinks, styled as a light-blue pill, left of the email", () => {
     useGetMeQuery.mockReturnValue({
-      data: { id: "u1", email: "admin@test.local", name: null, role: "admin", status: "active", groupNames: [], createdAt: "2026-01-01T00:00:00.000Z" },
+      data: { id: "u1", email: "admin@test.local", name: "Test Admin", role: "admin", status: "active", groupNames: [], createdAt: "2026-01-01T00:00:00.000Z" },
     });
 
     renderLayout();

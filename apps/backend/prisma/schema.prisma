@@ -78,7 +78,7 @@ model User {
   id        String     @id @default(uuid())
   idpSub    String?    @unique // Auth0 subject; null until first magic-link sign-in
   email     String     @unique
-  name      String?
+  name      String // every user must have a display name — set by the admin at invite time
   avatarUrl String?
   role      Role       @default(member)
   status    UserStatus @default(invited)

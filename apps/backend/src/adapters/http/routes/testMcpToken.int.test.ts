@@ -25,7 +25,7 @@ describe("POST /test/mcp-token", () => {
 
   it("mints a token for a seeded, non-disabled user and activates + links idpSub", async () => {
     const user = await prisma.user.create({
-      data: { email: "invited-admin@test.local", role: "admin", status: "invited" },
+      data: { email: "invited-admin@test.local", name: "Test Admin", role: "admin", status: "invited" },
     });
 
     const res = await request(app)
@@ -65,7 +65,7 @@ describe("POST /test/mcp-token", () => {
 
   it("403s for a disabled user", async () => {
     const user = await prisma.user.create({
-      data: { email: "disabled-user@test.local", status: "disabled" },
+      data: { email: "disabled-user@test.local", name: "Disabled User", status: "disabled" },
     });
 
     await request(app)

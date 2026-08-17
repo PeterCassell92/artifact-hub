@@ -3,14 +3,15 @@ import type { Role } from "contracts";
 import { prisma } from "../db";
 import { generateToken, hashToken } from "../core/secureTokens";
 import { enqueueOutboxEvent } from "./outbox";
+import { nameFromEmail } from "./adminUsers";
 
 const EXPIRES_IN_DAYS = 7;
 
-export type InvitationWithInviter = Invitation & { invitedBy: { name: string | null } };
+export type InvitationWithInviter = Invitation & { invitedBy: { name: string } };
 
 export interface CreateInvitationParams {
   email: string;
-  name?: string;
+  name: string;
   role: Role;
   groupIds: string[];
   invitedById: string;
@@ -40,7 +41,7 @@ export async function createInvitation(params: CreateInvitationParams): Promise<
     const inv = await tx.invitation.create({
       data: {
         email: params.email,
-        name: params.name ?? null,
+        name: params.name,
         role: params.role,
         groupIds: params.groupIds,
         tokenHash: hashToken(token),
@@ -53,7 +54,7 @@ export async function createInvitation(params: CreateInvitationParams): Promise<
     const existingUser = await tx.user.findUnique({ where: { email: params.email } });
     if (!existingUser) {
       const user = await tx.user.create({
-        data: { email: params.email, name: params.name ?? null, role: params.role, status: "invited" },
+        data: { email: params.email, name: params.name, role: params.role, status: "invited" },
       });
       for (const groupId of params.groupIds) {
         await tx.groupMembership.create({ data: { userId: user.id, groupId } });
@@ -99,10 +100,20 @@ export function isInvitationUsable(invitation: Invitation, now: Date): boolean {
  */
 export async function acceptInvitation(invitation: Invitation): Promise<User> {
   return prisma.$transaction(async (tx) => {
+    // The create branch is defensive only — createInvitation always creates the placeholder
+    // `users` row up front (or seed.ts does, for initial admins), so by the time an invitee
+    // reaches accept-invite a row should already exist and this upsert takes the update branch.
+    // Falls back to a name derived from the email if the invitation snapshot's own name is
+    // somehow unset, since every user row requires one.
     const user = await tx.user.upsert({
       where: { email: invitation.email },
       update: { role: invitation.role, status: "active" },
-      create: { email: invitation.email, role: invitation.role, status: "active" },
+      create: {
+        email: invitation.email,
+        name: invitation.name ?? nameFromEmail(invitation.email),
+        role: invitation.role,
+        status: "active",
+      },
     });
 
     for (const groupId of invitation.groupIds) {

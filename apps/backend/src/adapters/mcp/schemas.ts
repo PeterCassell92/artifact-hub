@@ -66,6 +66,8 @@ export const GetArtifactInput = z.object({ id: z.string().uuid() });
 
 export const CommentOnArtifactInput = CreateCommentInput.extend({ id: z.string().uuid() });
 
+export const ListCommentsInput = z.object({ id: z.string().uuid() });
+
 export const CreateShareLinkInput = z.object({ id: z.string().uuid() });
 
 export const RevokeAccessInput = z.object({ id: z.string().uuid() });

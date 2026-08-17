@@ -74,3 +74,17 @@ export function groupsTable(items: GroupRow[]): string {
   const rows = items.map((g) => `| ${g.name} | ${g.description ?? ""} |`);
   return ["| name | description |", "|---|---|", ...rows].join("\n");
 }
+
+interface CommentRow {
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+/** `list_comments` table — oldest first, matching `listComments()`'s ordering. */
+export function commentsTable(items: CommentRow[]): string {
+  const rows = items.map(
+    (c) => `| ${c.createdAt.slice(0, 10)} | ${c.authorName} | ${c.body.replace(/\|/g, "\\|")} |`,
+  );
+  return ["| date | author | comment |", "|---|---|---|", ...rows].join("\n");
+}

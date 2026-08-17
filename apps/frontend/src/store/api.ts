@@ -8,12 +8,15 @@ import type {
   ChangeRoleInput,
   CommentView,
   CorrectiveGroupChangeInput,
+  CreateArtifactInput,
+  CreateArtifactResponse,
   CreateGroupInput,
   CreateInvitationInput,
   DownloadUrlResponse,
   GroupView,
   InvitationPreview,
   InvitationView,
+  PublicUserView,
   ShareLinkView,
   UserView,
 } from "contracts";
@@ -123,6 +126,24 @@ export const api = createApi({
       invalidatesTags: (_result, _error, artifactId) => [{ type: "Artifact", id: artifactId }, "ArtifactList"],
     }),
 
+    // Two-call publish flow (docs/architecture/01 decision #44) — the raw bytes PUT to
+    // `uploadUrl` in between these two goes straight to Tigris/MinIO, not through this app's
+    // /api, so it isn't (and can't be) an RTK Query endpoint; it's a plain fetch orchestrated by
+    // the caller (PublishArtifactModal).
+    createArtifact: builder.mutation<CreateArtifactResponse, CreateArtifactInput>({
+      query: (body) => ({ url: "/artifacts", method: "POST", body }),
+      // No invalidatesTags — the artifact isn't "real" (0 bytes) until finalizeArtifact succeeds.
+    }),
+
+    finalizeArtifact: builder.mutation<ArtifactDetail, { artifactId: string; checksumSha256?: string }>({
+      query: ({ artifactId, checksumSha256 }) => ({
+        url: `/artifacts/${artifactId}/finalize`,
+        method: "POST",
+        body: checksumSha256 ? { checksumSha256 } : {},
+      }),
+      invalidatesTags: ["ArtifactList"],
+    }),
+
     createShareLink: builder.mutation<ShareLinkView, string>({
       query: (artifactId) => ({ url: `/artifacts/${artifactId}/share-links`, method: "POST" }),
     }),
@@ -173,6 +194,12 @@ export const api = createApi({
       query: () => "/groups",
       providesTags: ["Group"],
     }),
+    // Non-admin-gated (unlike getUsers → /admin/users) — feeds AccessPolicyFields' "Specific
+    // people" picker so any artifact owner can select real emails, not just admins.
+    listUsers: builder.query<PublicUserView[], void>({
+      query: () => "/users",
+      providesTags: ["User"],
+    }),
     createGroup: builder.mutation<GroupView, CreateGroupInput>({
       query: (body) => ({ url: "/admin/groups", method: "POST", body }),
       invalidatesTags: ["Group"],
@@ -198,6 +225,8 @@ export const {
   useAddCommentMutation,
   useUpdatePolicyMutation,
   useRevokeAccessMutation,
+  useCreateArtifactMutation,
+  useFinalizeArtifactMutation,
   useCreateShareLinkMutation,
   useResolveDownloadUrlMutation,
   useGetUsersQuery,
@@ -209,6 +238,7 @@ export const {
   useGetGroupsQuery,
   useCreateGroupMutation,
   useListGroupsQuery,
+  useListUsersQuery,
   useGetInvitationPreviewQuery,
   useAcceptInvitationMutation,
 } = api;

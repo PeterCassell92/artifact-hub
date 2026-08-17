@@ -32,7 +32,13 @@ describe("Invitation lifecycle (docs/architecture/02 §4)", () => {
 
   async function makeAdmin() {
     return prisma.user.create({
-      data: { email: `admin-${Math.random()}@test.local`, idpSub: `idp|${Math.random()}`, status: "active", role: "admin" },
+      data: {
+        email: `admin-${Math.random()}@test.local`,
+        name: "Test Admin",
+        idpSub: `idp|${Math.random()}`,
+        status: "active",
+        role: "admin",
+      },
     });
   }
 
@@ -52,7 +58,7 @@ describe("Invitation lifecycle (docs/architecture/02 §4)", () => {
     const created = await request(app)
       .post("/api/admin/invitations")
       .set("Authorization", `Bearer ${tokenFor(admin.idpSub as string)}`)
-      .send({ email, role: "member", groupIds: [group.id] })
+      .send({ email, name: "New Invitee", role: "member", groupIds: [group.id] })
       .expect(201);
     expect(created.body).toMatchObject({ email, role: "member", groupNames: [group.name], status: "pending" });
 
@@ -131,12 +137,12 @@ describe("Invitation lifecycle (docs/architecture/02 §4)", () => {
   it("activates a pre-seeded (INITIAL_ADMIN_EMAILS-style) users row instead of erroring on conflict", async () => {
     const admin = await makeAdmin();
     const email = `preseeded-${Math.random()}@test.local`;
-    await prisma.user.create({ data: { email, role: "admin", status: "invited" } });
+    await prisma.user.create({ data: { email, name: "Preseeded Admin", role: "admin", status: "invited" } });
 
     const created = await request(app)
       .post("/api/admin/invitations")
       .set("Authorization", `Bearer ${tokenFor(admin.idpSub as string)}`)
-      .send({ email, role: "admin", groupIds: [] })
+      .send({ email, name: "Preseeded Admin", role: "admin", groupIds: [] })
       .expect(201);
 
     const token = await extractRawToken(created.body.id);
@@ -153,7 +159,7 @@ describe("Invitation lifecycle (docs/architecture/02 §4)", () => {
     const created = await request(app)
       .post("/api/admin/invitations")
       .set("Authorization", `Bearer ${tokenFor(admin.idpSub as string)}`)
-      .send({ email, role: "member", groupIds: [] })
+      .send({ email, name: "New Invitee", role: "member", groupIds: [] })
       .expect(201);
 
     await prisma.invitation.update({
@@ -176,7 +182,7 @@ describe("Invitation lifecycle (docs/architecture/02 §4)", () => {
     await request(app)
       .post("/api/admin/invitations")
       .set("Authorization", `Bearer ${tokenFor(admin.idpSub as string)}`)
-      .send({ email: "x@test.local", role: "member", groupIds: ["00000000-0000-0000-0000-000000000000"] })
+      .send({ email: "x@test.local", name: "New Invitee", role: "member", groupIds: ["00000000-0000-0000-0000-000000000000"] })
       .expect(400);
   });
 
@@ -188,7 +194,7 @@ describe("Invitation lifecycle (docs/architecture/02 §4)", () => {
     await request(app)
       .post("/api/admin/invitations")
       .set("Authorization", `Bearer ${tokenFor(admin.idpSub as string)}`)
-      .send({ email, role: "member", groupIds: [group.id] })
+      .send({ email, name: "New Invitee", role: "member", groupIds: [group.id] })
       .expect(201);
 
     const res = await request(app)
