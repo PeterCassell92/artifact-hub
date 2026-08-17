@@ -20,7 +20,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "prisma:generate": "prisma generate",
-    "reinvite": "tsx scripts/resendInvitation.ts"
+    "reinvite": "tsx scripts/resendInvitation.ts",
+    "testProductionEmail": "tsx scripts/testProductionEmail.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

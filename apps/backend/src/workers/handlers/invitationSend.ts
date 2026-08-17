@@ -1,7 +1,6 @@
 import { getEnv } from "../../env";
 import { sendMail } from "../../adapters/email/mailer";
 import { buildInvitationEmail } from "../../adapters/email/templates/invitationEmail";
-import { logger } from "../../logger";
 import type { OutboxHandler } from "../outboxDrain";
 
 interface InvitationSendPayload extends Record<string, unknown> {
@@ -20,5 +19,4 @@ export const sendInvitationEmail: OutboxHandler = async (payload) => {
   }
   const acceptUrl = `${getEnv().APP_ORIGIN}/accept-invite?token=${payload.token}`;
   await sendMail({ to: payload.email, ...buildInvitationEmail({ acceptUrl }) });
-  logger.info({ recipientEmail: payload.email }, "sent invitation email");
 };

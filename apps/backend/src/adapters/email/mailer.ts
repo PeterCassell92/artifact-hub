@@ -1,5 +1,6 @@
 import nodemailer, { type Transporter } from "nodemailer";
-import { getEnv } from "../../env";
+import { getEnv } from "#env";
+import { logger } from "#logger";
 
 let transporter: Transporter | undefined;
 
@@ -25,5 +26,12 @@ export interface SendMailInput {
 
 /** SMTP send (MailCatcher in dev, Resend in prod — same transport, see env.ts). */
 export async function sendMail(input: SendMailInput): Promise<void> {
-  await getTransporter().sendMail({ from: getEnv().EMAIL_FROM, ...input });
+  const env = getEnv();
+  try {
+    await getTransporter().sendMail({ from: env.EMAIL_FROM, ...input });
+    logger.info({ to: input.to, subject: input.subject }, "email sent");
+  } catch (err) {
+    logger.error({ err, to: input.to, subject: input.subject, smtpHost: env.SMTP_HOST }, "email send failed");
+    throw err;
+  }
 }
