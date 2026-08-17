@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useGetArtifactQuery } from "../store/api";
 import { ArtifactViewer } from "../components/ArtifactViewer";
 import { CommentForm } from "../components/CommentForm";
@@ -13,43 +13,72 @@ import { fileTypeLabel, formatBytes, formatPublishedAtWithTime, kindLabel } from
  * than a crash — this is the live-revocation UX docs/frontend/01 §8 calls for. */
 export function ArtifactDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { data: artifact, isLoading, error } = useGetArtifactQuery(id ?? "", { skip: !id });
+
+  const backButton = (
+    <button
+      type="button"
+      onClick={() => navigate(-1)}
+      className="self-start whitespace-nowrap text-sm text-neutral-600 underline hover:text-neutral-900"
+    >
+      ← Back
+    </button>
+  );
 
   if (isLoading) {
     return (
-      <p className="text-sm text-neutral-500" role="status">
-        Loading…
-      </p>
+      <div className="flex flex-col gap-4">
+        {backButton}
+        <p className="text-sm text-neutral-500" role="status">
+          Loading…
+        </p>
+      </div>
     );
   }
 
   if (error && "status" in error && error.status === 403) {
     return (
-      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center">
-        <p className="text-neutral-900">You no longer have access to this artifact.</p>
-        <Link to="/" className="text-sm text-neutral-600 underline hover:text-neutral-900">
-          Back to Dashboard
-        </Link>
+      <div className="flex flex-col gap-4">
+        {backButton}
+        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center">
+          <p className="text-neutral-900">You no longer have access to this artifact.</p>
+          <Link to="/" className="text-sm text-neutral-600 underline hover:text-neutral-900">
+            Back to Dashboard
+          </Link>
+        </div>
       </div>
     );
   }
 
   if (error || !artifact) {
     return (
-      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center">
-        <p className="text-neutral-900">Artifact not found.</p>
-        <Link to="/" className="text-sm text-neutral-600 underline hover:text-neutral-900">
-          Back to Dashboard
-        </Link>
+      <div className="flex flex-col gap-4">
+        {backButton}
+        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center">
+          <p className="text-neutral-900">Artifact not found.</p>
+          <Link to="/" className="text-sm text-neutral-600 underline hover:text-neutral-900">
+            Back to Dashboard
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-semibold text-neutral-900">{artifact.title}</h1>
-        {artifact.description && <p className="mt-1 text-sm text-neutral-600">{artifact.description}</p>}
+      <div className="flex items-center justify-between gap-6">
+        <div>
+          <h1 className="text-lg font-semibold text-neutral-900">{artifact.title}</h1>
+          {artifact.description && <p className="mt-1 text-sm text-neutral-600">{artifact.description}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="shrink-0 whitespace-nowrap text-sm leading-7 text-neutral-600 underline hover:text-neutral-900"
+        >
+          ← Back
+        </button>
       </div>
 
       <ArtifactViewer artifact={artifact} />

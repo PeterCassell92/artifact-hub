@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ArtifactDetail } from "contracts";
 
@@ -60,6 +61,26 @@ function renderPage() {
     </MemoryRouter>,
   );
 }
+
+describe("ArtifactDetailPage — Back button", () => {
+  it("navigates to the previous router entry rather than a fixed route", async () => {
+    queryResult = { data: { ...baseArtifact, canManagePolicy: true }, isLoading: false };
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter initialEntries={["/artifacts?kind=document", "/artifacts/a1"]} initialIndex={1}>
+        <Routes>
+          <Route path="/artifacts" element={<div>My Artifacts filtered view</div>} />
+          <Route path="/artifacts/:id" element={<ArtifactDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+
+    expect(screen.getByText("My Artifacts filtered view")).toBeInTheDocument();
+  });
+});
 
 describe("ArtifactDetailPage — access policy panel by role", () => {
   it("shows the editable policy editor for the owner (canManagePolicy)", () => {
