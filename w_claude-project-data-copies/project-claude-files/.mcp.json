@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e", "GITHUB_TOOLSETS=repos,issues,pull_requests,actions",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GHMCP_ARTIFACT_HUB_SCOPE_PAT}"
+      }
+    },
+     "postgres-artifacthub": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "DATABASE_URI",
+        "crystaldba/postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "${ARTIFACT_HUB_DB_STRING}"
+      }
+    }
+  }
+}
