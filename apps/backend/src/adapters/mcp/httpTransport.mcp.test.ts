@@ -144,6 +144,7 @@ describe("POST /mcp (HTTP black-box)", () => {
         "list_artifacts",
         "list_comments",
         "list_groups",
+        "list_relationships",
         "list_shared_with_me",
         "publish_artifact",
         "revoke_access",

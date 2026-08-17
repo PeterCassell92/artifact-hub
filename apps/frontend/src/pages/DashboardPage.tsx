@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useGetMeQuery, useGetMyArtifactsQuery, useGetSharedWithMeQuery } from "../store/api";
 import { ArtifactListItem } from "../components/ArtifactListItem";
+import { NoArtifactsToDisplay } from "../components/NoArtifactsToDisplay";
 import { PublishArtifactModal } from "../components/PublishArtifactModal";
 import { audienceLabel } from "../lib/formatters";
 import { hasVisitedGetStarted, markVisitedGetStarted } from "../lib/getStartedCookie";
@@ -49,12 +50,16 @@ export function DashboardPage() {
 
       <section className="mt-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-700">My Artifacts</h2>
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-sm font-semibold text-neutral-700">My Artifacts</h2>
+            <span className="text-xs text-neutral-500">Showing your {RECENT_LIMIT} most recently published</span>
+          </div>
           <Link to="/artifacts" className="text-sm text-neutral-500 hover:text-neutral-900">
             View all
           </Link>
         </div>
         <div className="mt-3 flex flex-col gap-3">
+          {mine.data?.items.length === 0 && <NoArtifactsToDisplay />}
           {mine.data?.items.map((artifact) => (
             <ArtifactListItem
               key={artifact.id}
@@ -74,12 +79,18 @@ export function DashboardPage() {
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-700">Shared With Me</h2>
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-sm font-semibold text-neutral-700">Shared With Me</h2>
+            <span className="text-xs text-neutral-500">
+              Showing the {RECENT_LIMIT} most recently shared with you
+            </span>
+          </div>
           <Link to="/shared" className="text-sm text-neutral-500 hover:text-neutral-900">
             View all
           </Link>
         </div>
         <div className="mt-3 flex flex-col gap-3">
+          {shared.data?.items.length === 0 && <NoArtifactsToDisplay />}
           {shared.data?.items.map((artifact) => (
             <ArtifactListItem
               key={artifact.id}

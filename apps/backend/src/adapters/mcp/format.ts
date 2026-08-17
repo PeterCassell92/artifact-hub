@@ -106,3 +106,22 @@ export function relationshipsTable(items: RelationshipRow[]): string {
   });
   return ["| type | direction | other artifact | note | createdAt |", "|---|---|---|---|---|", ...rows].join("\n");
 }
+
+interface RelationshipByTypeRow {
+  type: string;
+  from: { id: string; title: string } | null;
+  to: { id: string; title: string } | null;
+  note: string | null;
+  createdAt: string;
+}
+
+/** `list_relationships` table — newest first, matching `listRelationshipsByType()`'s ordering.
+ * Unlike `relationshipsTable` there's no anchor artifact, so both `from` and `to` are shown
+ * explicitly; either can independently be "(restricted)" when the caller can't view that side. */
+export function relationshipsByTypeTable(items: RelationshipByTypeRow[]): string {
+  const side = (a: { id: string; title: string } | null) => (a ? `${a.title} (${a.id})` : "(restricted)");
+  const rows = items.map(
+    (r) => `| ${r.type} | ${side(r.from)} | ${side(r.to)} | ${r.note ?? ""} | ${r.createdAt.slice(0, 10)} |`,
+  );
+  return ["| type | from | to | note | createdAt |", "|---|---|---|---|---|", ...rows].join("\n");
+}

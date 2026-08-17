@@ -24,13 +24,21 @@ import {
   createRelationships,
   deleteRelationship,
   listRelationships,
+  listRelationshipsByType,
 } from "../../database-service/relationships";
 import { createShareLink } from "../../database-service/shareLinks";
 import { findUserWithGroupsById, toUserView } from "../../database-service/adminUsers";
 import { listGroups, toGroupView } from "../../database-service/groups";
 import { getObjectBuffer } from "../../storage/s3";
 import { getEnv } from "../../env";
-import { commentsTable, groupsTable, ownedArtifactsTable, relationshipsTable, sharedWithMeTable } from "./format";
+import {
+  commentsTable,
+  groupsTable,
+  ownedArtifactsTable,
+  relationshipsByTypeTable,
+  relationshipsTable,
+  sharedWithMeTable,
+} from "./format";
 import {
   CommentOnArtifactInput,
   CreateShareLinkInput,
@@ -42,6 +50,7 @@ import {
   ListArtifactsInput,
   ListCommentsInput,
   ListGroupsInput,
+  ListRelationshipsInput,
   ListSharedWithMeInput,
   PublishArtifactInput,
   RevokeAccessInput,
@@ -139,6 +148,18 @@ Arguments: id (artifact uuid).
 Result is metadata-only: { relationships: [{ id, type, direction, note, otherArtifact: {id, title, kind, ownerId} | null, createdByName, createdAt }] }, plus a markdown table.
 
 Example: list_artifact_relationships({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
+
+const LIST_RELATIONSHIPS_DESCRIPTION = `Reads relationships across the WHOLE corpus of artifacts you can see, optionally filtered to one type — for spotting patterns across many artifacts at once (e.g. "which artifacts have been superseded", "map every derived_from chain", "how much related_to cross-linking exists"). Use when the user's question is about the relationship graph in general, not about one specific artifact's connections.
+
+Do NOT use this when the user already has one artifact in mind and wants just its connections — use list_artifact_relationships({ id }) instead, it's cheaper and includes direction. Do NOT use this to CREATE or remove a relationship — use link_artifacts / unlink_artifacts for that; this tool is read-only.
+
+A row is only returned if you can view its from artifact or its to artifact (or both) — a relationship where you can't see either side never appears. Within a returned row, each side is independently redacted to null if you can't view that particular artifact (the link's existence and type are still shown either way) — so, unlike list_artifact_relationships, a row here can have BOTH from and to be non-null, one of them null, but never both null.
+
+Arguments: type (optional — one of supersedes | derived_from | related_to; omit to get every type in one call), cursor (optional, from a prior call's nextCursor), limit (optional, 1-100, default 20).
+
+Result is metadata-only: { relationships: [{ id, type, note, from: {id, title, kind, ownerId} | null, to: {id, title, kind, ownerId} | null, createdByName, createdAt }], nextCursor }, plus a markdown table.
+
+Example: list_relationships({ type: "supersedes", limit: 50 }).`;
 
 const UNLINK_ARTIFACTS_DESCRIPTION = `Removes a relationship previously created by link_artifacts or publish_artifact's relationships argument. Use when the user says something like "that's not related anymore" or "remove that link" — or before re-linking two artifacts with a different type (there's no in-place edit; retract, then link_artifacts again with the corrected type/note).
 
@@ -454,6 +475,18 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
 
       const relationships = await listRelationships(viewer, artifact.id);
       return toolJson({ relationships }, relationshipsTable(relationships));
+    }),
+  );
+
+  server.registerTool(
+    "list_relationships",
+    { title: "List relationships across artifacts", description: LIST_RELATIONSHIPS_DESCRIPTION, inputSchema: ListRelationshipsInput },
+    wrap("list_relationships", async (args) => {
+      const { items, nextCursor } = await listRelationshipsByType(viewer, args.type, {
+        cursor: args.cursor,
+        limit: args.limit,
+      });
+      return toolJson({ relationships: items, nextCursor }, relationshipsByTypeTable(items));
     }),
   );
 

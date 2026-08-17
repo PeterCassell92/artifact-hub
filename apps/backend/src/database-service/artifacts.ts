@@ -10,7 +10,7 @@ import { getPresignedUploadUrl, headObject } from "../storage/s3";
 import { enqueueOutboxEvent, type EnqueueOutboxEventInput } from "./outbox";
 import { buildPublishNotificationEvents } from "./artifactRecipients";
 
-const withPolicyJoins = Prisma.validator<Prisma.ArtifactDefaultArgs>()({
+export const withPolicyJoins = Prisma.validator<Prisma.ArtifactDefaultArgs>()({
   include: {
     owner: { select: { id: true, name: true, email: true } },
     allowedUsers: { select: { userId: true } },
@@ -18,7 +18,7 @@ const withPolicyJoins = Prisma.validator<Prisma.ArtifactDefaultArgs>()({
     _count: { select: { comments: true } },
   },
 });
-type ArtifactWithPolicyJoins = Prisma.ArtifactGetPayload<typeof withPolicyJoins>;
+export type ArtifactWithPolicyJoins = Prisma.ArtifactGetPayload<typeof withPolicyJoins>;
 
 /** Fetches one artifact with everything canView/canManagePolicy and the detail response need. */
 export function findArtifactForDetail(id: string): Promise<ArtifactWithPolicyJoins | null> {
@@ -97,7 +97,7 @@ export interface ArtifactListFilters {
   sort?: "published" | "title" | "lastAccessed" | "size";
 }
 
-function paginateRows<T extends { id: string }>(
+export function paginateRows<T extends { id: string }>(
   rows: T[],
   limit: number,
 ): { items: T[]; nextCursor: string | null } {
@@ -180,6 +180,22 @@ function scopeEligibilityWhere(
       { revoked: false },
       { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
       { OR: audienceClauses },
+    ],
+  };
+}
+
+/** "Can this viewer see this artifact at all" — the union of the two `scopeEligibilityWhere`
+ * scopes. Used by `listRelationshipsByType`, which has no single anchor artifact to `canView()`
+ * against up front the way every other read path does. */
+export function visibleArtifactWhere(
+  viewerId: string,
+  viewerGroupIds: string[],
+  now: Date,
+): Prisma.ArtifactWhereInput {
+  return {
+    OR: [
+      scopeEligibilityWhere(viewerId, viewerGroupIds, "mine", now),
+      scopeEligibilityWhere(viewerId, viewerGroupIds, "sharedWithMe", now),
     ],
   };
 }

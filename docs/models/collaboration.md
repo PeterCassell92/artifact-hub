@@ -58,3 +58,12 @@ in-place edit, so changing a relationship is unlink then re-link. The SPA's arti
 renders relationships with add/remove controls for the owner (outgoing side only — the `to` side's
 owner has no say, matching creation); enables agent navigation and inference between related
 artifacts (e.g. "this is an updated version of …").
+
+**Bulk, corpus-wide read** via `list_relationships` (MCP) or `GET /api/relationships` — unlike
+the two per-artifact reads above, this has no anchor artifact, so a row is returned whenever the
+caller can view `from` **or** `to` (a row with neither side viewable is excluded outright, not
+returned redacted); within a returned row each side is independently nulled out if that
+particular artifact isn't viewable, same redaction rule as `otherArtifact` above, applied to both
+ends. Optional `type` filter (`supersedes`/`derived_from`/`related_to`); omit it for every type in
+one cursor-paginated call. Exists so an agent can reason over the relationship graph as a whole
+(e.g. "which artifacts have been superseded") in one call instead of one per artifact.

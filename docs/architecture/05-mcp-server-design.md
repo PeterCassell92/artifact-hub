@@ -83,6 +83,7 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 | `list_comments` | Read back an artifact's comments, oldest first | `{ id }` | `{ comments: [{ id, authorName, body, createdAt }] }` + markdown table |
 | `link_artifacts` | Link an owned artifact to one you can view (`supersedes`/`derived_from`/`related_to`), post-hoc | `{ fromId, toId, type, note? }` | `{ relationshipId, createdAt }` |
 | `list_artifact_relationships` | Read back an artifact's relationships, either direction | `{ id }` | `{ relationships: [{ id, type, direction, note, otherArtifact, createdByName, createdAt }] }` + markdown table |
+| `list_relationships` | Read relationships **across the whole corpus**, optionally filtered to one `type` — for inference over the graph, not one artifact's own connections | `{ type?, cursor?, limit? }` | `{ relationships: [{ id, type, note, from, to, createdByName, createdAt }], nextCursor }` + markdown table |
 | `unlink_artifacts` | Retract a relationship (owner of its `fromId` only); no in-place edit — unlink then re-`link_artifacts` | `{ relationshipId }` | `{ ok }` |
 | `create_share_link` | Mint a locator link for an artifact you can view (owner or not) | `{ id }` | `{ url }` |
 | `set_access_policy` | Change an owned artifact's audience/expiry — narrowing is the general revocation mechanism | `{ id, audience, expiry }` | `{ ok, effectiveFrom }` |
@@ -127,6 +128,13 @@ Notes:
   one on its far end. `unlink_artifacts` retracts one by id — owner of its `fromId` only, same as
   creating it; there's no in-place edit, so changing a relationship is unlink then re-link. The
   REST equivalents (`06` §2) back the artifact detail page's own add/remove UI.
+- **`list_relationships` is the bulk, corpus-wide counterpart** — no anchor artifact, so a row is
+  returned whenever the caller can view `from` **or** `to` (excluded outright if neither side is
+  visible), with each side independently redacted to `null` per the same rule above. Optional
+  `type` scopes to one relation type; omitting it returns every type in one cursor-paginated call
+  — meant for an agent reasoning over the relationship graph as a whole (e.g. "which artifacts
+  have been superseded"), where per-artifact calls would mean one round-trip per artifact. `GET
+  /api/relationships` (`06` §2) is its REST equivalent.
 
 ### `list_shared_with_me` result shape (illustrative)
 

@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
-import type { ArtifactRelationshipInput, ArtifactRelationshipSummary, RelationType } from "contracts";
+import type { ArtifactRelationshipInput, ArtifactRelationshipSummary, RelationshipRow, RelationType } from "contracts";
 import { prisma } from "../db";
 import { canManagePolicy, canView, type Viewer } from "../core/authz";
-import { findArtifactForDetail, toPolicy } from "./artifacts";
+import { findArtifactForDetail, paginateRows, toPolicy, visibleArtifactWhere, withPolicyJoins } from "./artifacts";
 
 export type CreateRelationshipResult =
   | { ok: true; relationshipId: string; createdAt: Date }
@@ -136,4 +136,55 @@ export async function listRelationships(
       createdAt: row.createdAt.toISOString(),
     };
   });
+}
+
+export interface ListRelationshipsByTypeResult {
+  items: RelationshipRow[];
+  nextCursor: string | null;
+}
+
+/**
+ * Corpus-wide relationship listing, optionally filtered to one `type` — the bulk counterpart to
+ * `listRelationships`, which is scoped to one artifact you've already confirmed you can view.
+ * There's no anchor artifact here, so visibility works in two steps: the SQL `where` only matches
+ * rows where the viewer can see `from` OR `to` (via `visibleArtifactWhere` — same policy logic as
+ * `canView`, expressed as a Prisma clause so pagination stays correct), then each side is
+ * independently redacted to `null` in memory via `canView`/`toPolicy` if the viewer can't see that
+ * particular artifact — same rule as `listRelationships`'s `otherArtifact: null`, just applied to
+ * both ends instead of only the far one. A row with neither side viewable never reaches this
+ * function's caller — the SQL `where` excludes it outright.
+ */
+export async function listRelationshipsByType(
+  viewer: Viewer,
+  type: RelationType | undefined,
+  { cursor, limit }: { cursor?: string; limit: number },
+): Promise<ListRelationshipsByTypeResult> {
+  const now = new Date();
+  const visible = visibleArtifactWhere(viewer.id, viewer.groupIds, now);
+
+  const rows = await prisma.artifactRelationship.findMany({
+    where: { ...(type ? { type } : {}), OR: [{ from: visible }, { to: visible }] },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    include: { createdBy: { select: { name: true } }, from: withPolicyJoins, to: withPolicyJoins },
+  });
+
+  const { items, nextCursor } = paginateRows(rows, limit);
+  return {
+    items: items.map((row) => ({
+      id: row.id,
+      type: row.type,
+      note: row.note,
+      from: canView(viewer, toPolicy(row.from), now).allowed
+        ? { id: row.from.id, title: row.from.title, kind: row.from.kind, ownerId: row.from.ownerId }
+        : null,
+      to: canView(viewer, toPolicy(row.to), now).allowed
+        ? { id: row.to.id, title: row.to.title, kind: row.to.kind, ownerId: row.to.ownerId }
+        : null,
+      createdByName: row.createdBy.name,
+      createdAt: row.createdAt.toISOString(),
+    })),
+    nextCursor,
+  };
 }

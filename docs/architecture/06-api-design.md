@@ -55,6 +55,10 @@ uses the `ArtifactAllowedUser(userId)` / `ArtifactAllowedGroup(groupId)` indexes
 list endpoints also accept `q` (search) and the facet filters defined in
 [`../frontend/02-filtering-and-search.md`](../frontend/02-filtering-and-search.md).
 
+| Method & path | Purpose | Authz |
+|---------------|---------|-------|
+| `GET /api/relationships` | List relationships **across every artifact the caller can see**, optionally `?type=`-filtered, cursor-paginated (`?cursor=&limit=`) — the bulk counterpart to `GET /api/artifacts/:id/relationships` above, mirroring the MCP `list_relationships` tool. A row returns whenever the caller can view `from` **or** `to`; each side is independently redacted to `null` when not viewable, same rule as the per-artifact route | per-side `canView` (row excluded if neither side is viewable) |
+
 **Access auditing:** every view/download here — and every share-link redemption (`§4`) and MCP
 resource read (`05`) — writes an `AccessEvent` capturing the **route** (`ui` / `share_link` /
 `mcp`), `action`, and `decision` (allowed **or** denied). See [`../models/access-event.md`](../models/access-event.md).

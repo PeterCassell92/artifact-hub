@@ -3,6 +3,7 @@ import { requireAdmin, requireAuth } from "../../auth/tokenValidation";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createGroupsRouter } from "./routes/groups";
 import { createUsersRouter } from "./routes/users";
+import { createRelationshipsRouter } from "./routes/relationships";
 import { createShareLinkRedemptionRouter } from "./routes/shareLinkRedemption";
 import { createAdminRouter } from "./routes/admin";
 import { createMeRouter } from "./routes/me";
@@ -18,6 +19,7 @@ export function createApiRouter(): Router {
   router.use(requireAuth("api"));
 
   router.use("/artifacts", createArtifactsRouter());
+  router.use("/relationships", createRelationshipsRouter());
   router.use("/groups", createGroupsRouter());
   router.use("/users", createUsersRouter());
   router.use("/s", createShareLinkRedemptionRouter());

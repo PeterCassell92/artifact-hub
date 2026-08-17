@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ArtifactKind, RelationType } from "./enums";
+import { paginated } from "./common";
 
 /** A comment as shown in the UI/MCP (body, author name, date). */
 export const CommentView = z.object({
@@ -81,3 +82,44 @@ export const ArtifactRelationshipLinkResult = z.union([
   }),
 ]);
 export type ArtifactRelationshipLinkResult = z.infer<typeof ArtifactRelationshipLinkResult>;
+
+/** `list_relationships` (MCP) / `GET /api/relationships` request — corpus-wide, optionally
+ * filtered to one `type`, unlike `ListArtifactRelationshipsInput` which is scoped to one
+ * artifact's `id`. Omit `type` to pull every relationship type in one call. `limit` uses
+ * `z.coerce` (like `ArtifactListQuery`'s) so this schema works unchanged against both MCP's
+ * already-typed JSON args and REST's string query params. */
+export const ListRelationshipsInput = z.object({
+  type: RelationType.optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+});
+export type ListRelationshipsInput = z.infer<typeof ListRelationshipsInput>;
+
+/** One endpoint (`from` or `to`) of a `RelationshipRow` — same shape as
+ * `ArtifactRelationshipSummary`'s `otherArtifact`. */
+export const RelationshipEndpoint = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  kind: ArtifactKind,
+  ownerId: z.string().uuid(),
+});
+export type RelationshipEndpoint = z.infer<typeof RelationshipEndpoint>;
+
+/** A row from `list_relationships` / `GET /api/relationships` — both `from` and `to` are shown
+ * (unlike `ArtifactRelationshipSummary`'s single `otherArtifact`, there's no anchor artifact this
+ * row is "outgoing/incoming" relative to). Each side is independently null when the caller can't
+ * view that artifact — same redaction rule as `otherArtifact`, applied to both ends instead of
+ * just the far one. A row with neither side viewable is never returned at all. */
+export const RelationshipRow = z.object({
+  id: z.string().uuid(),
+  type: RelationType,
+  note: z.string().nullable(),
+  from: RelationshipEndpoint.nullable(),
+  to: RelationshipEndpoint.nullable(),
+  createdByName: z.string().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type RelationshipRow = z.infer<typeof RelationshipRow>;
+
+export const RelationshipListResponse = paginated(RelationshipRow);
+export type RelationshipListResponse = z.infer<typeof RelationshipListResponse>;

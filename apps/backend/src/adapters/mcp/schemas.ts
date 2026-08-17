@@ -84,6 +84,10 @@ export const LinkArtifactsInput = ArtifactRelationshipInput.extend({ fromId: z.s
 
 export const ListArtifactRelationshipsInput = z.object({ id: z.string().uuid() });
 
+/** Corpus-wide, optionally type-filtered — see `ListRelationshipsInput`'s doc comment in
+ * contracts for how this differs from `ListArtifactRelationshipsInput` above. */
+export { ListRelationshipsInput } from "contracts";
+
 export const UnlinkArtifactsInput = z.object({ relationshipId: z.string().uuid() });
 
 export const SummariseArtifactReviewsArgs = z.object({ artifactId: z.string() });
