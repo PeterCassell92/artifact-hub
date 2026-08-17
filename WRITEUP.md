@@ -34,7 +34,13 @@ TODO: produce Loom video
 
 ## 5. Claude Code session logs
 
-[w_claude-project-data-copies](w_claude-project-data-copies)
+Redacted session logs are shared via Artifact Hub itself (published and access-controlled through
+the platform) rather than committed to this repo - it's a more fitting distribution channel for
+this kind of artifact than git, and avoids ever having raw session transcripts (which can capture
+things like shell environment output) sitting in source control.
+
+The `w_claude-project-data-copies` folder here still holds the copied `.claude` project files
+(skills, `.mcp.json`) referenced elsewhere in this writeup, minus the session logs themselves.
 
 ---
 
