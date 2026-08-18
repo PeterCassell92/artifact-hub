@@ -99,3 +99,5 @@ export const SummariseArtifactReviewsArgs = z.object({ artifactId: z.string() })
 export const GetUserDetailsInput = z.object({});
 
 export const ListGroupsInput = z.object({});
+
+export const GetEnrichmentStatusInput = z.object({ id: z.string().uuid() });

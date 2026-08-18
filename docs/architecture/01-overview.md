@@ -42,8 +42,11 @@ It is usable two ways over the same core logic:
    issued link. Share links are *pure locators*, never bearer tokens of access.
 4. **The owner never loses access to their own artifact** (the "My Artifacts" view), even
    after the policy expires.
-5. **The backend contains no LLM calls.** All logic is deterministic. The only model in the
-   loop is the *client's* (e.g. Claude Desktop).
+5. **The backend contains no LLM calls, with one scoped exception.** All authorization/policy
+   logic is deterministic. The only model in the request-time loop is the *client's* (e.g. Claude
+   Desktop). The exception: automatic artifact enrichment (decision #46) runs a background job
+   that calls Claude Sonnet via AWS Bedrock after every publish — advisory content
+   (summary/topics/tags/relationships) only, never an input to an access decision.
 6. **Files never pass through an agent's context as tool results.** Agent file delivery is
    via MCP **Resources**; presigned object-store URLs are confined to the browser/download path.
 7. **Authentication is passwordless (magic link).** No passwords anywhere — every human signs in
@@ -163,6 +166,7 @@ sharing one `core` domain layer. See `06` (API) and `05` (MCP) for the two adapt
 | 43 | Auth0 user provisioning is async | `acceptInvitation` upserts the local `users` row + memberships + invitation status **synchronously**, then enqueues an `auth0.provision_user` outbox row in the *same* transaction; the drain worker makes the real Management API call and links its returned `user_id` as `idpSub`. Resolves `02` §4's diagram (which reads as an inline call) against `02` §6's own stated reliability mechanism (outbox for *all* external calls, Auth0 included) | DECIDED | 02 §4/§6 |
 | 44 | `publish_artifact` upload mechanic | `05`'s input table lists `bytesRef` alongside full metadata in one shot, but never defines how an agent obtains it — there is no separate "request an upload slot" tool in the v1 list, and an MCP tool result can't itself perform an HTTP PUT. Resolved as **one tool, two calls**: call 1 (no `bytesRef`) creates the artifact row + policy and returns `{ artifactId, resourceUri, uploadUrl, bytesRef }` (`bytesRef` = the artifact id, naming it separately per `05`'s field so the mechanic reads clearly); the agent's host PUTs the bytes to `uploadUrl` using its own HTTP capability (e.g. Claude Code's Bash/curl); call 2 (`bytesRef` set) verifies the object landed in storage (`HeadObject`), records size/checksum, and returns the doc's exact `{ artifactId, resourceUri }` shape. No new tool added; no schema field added — an abandoned call-1-only artifact is the same accepted edge case as the no-draft-status choice below | DECIDED | 05 §4, development/implementation-plan.md Phase 4 |
 | 45 | `sort=lastAccessed` storage | `models/artifact.md` §4 lists `lastAccessedAt` as derived/computed (`max(AccessEvent.at)`), not stored. Phase 7's cursor-paginated `sort=lastAccessed` needs a stable, indexed order key — a per-request aggregate can't cursor-paginate consistently. Denormalized as `Artifact.lastAccessedAt` (indexed), updated whenever `recordAccessEvent` writes an **allowed** view/download | DECIDED | frontend/02 §3, models/artifact.md §4 |
+| 46 | Server-side enrichment (scoped exception to #5) | Automatic background job (`artifact.enrich` outbox event, drained by the existing in-process outbox worker — no new serverless/job infra) runs Claude Sonnet via AWS Bedrock (LangChain, a hand-rolled `.bindTools()` loop rather than LangGraph, keeping this orthogonal to decision #25) after every publish (MCP `publish_artifact` and the SPA both converge on `finalizeArtifact`, the single trigger point). Generates `Artifact.aiSummary`/`aiTopics`, proposes tags, and proposes relationships to the owner's other artifacts — only relationships clearing a confidence threshold (`config.ts`, git-committed, not a secret) are written. `ArtifactTag`/`ArtifactRelationship` gained `source`(`human`\|`ai`)/`confidence` columns; `AccessRoute` gained a `system` value so the job's own content reads are audited via `AccessEvent` like any other read. Owner-only status/history via `GET .../enrichment` (SPA, with a rerun button) and `get_enrichment_status` (MCP). Deliberate, scoped reversal of principle #5 for this one job type only — every other backend path stays LLM-free; LLM output never gates authz | DECIDED | 01 §8, future-features/AI-features.md |
 
 Items that were **OPEN** in the WIP doc (backend host, frontend host, authz model, HTML
 sandboxing) are now all closed above.
@@ -221,7 +225,9 @@ Every requirement maps to at least one design doc **and** one BDD scenario. No o
 
 ## 8. Deferred (noted, not in v1)
 
-Artifact editing and deletion (explicitly out of scope). Server-side AI: auto-tagging,
-embeddings / semantic search, server-generated summaries. CDN signed cookies. Experimental
-Skills-over-MCP primitive. See `10` for the deferred prod-hardening list (rate limiting,
-backups, content scanning).
+Artifact editing and deletion (explicitly out of scope). Server-side AI: embeddings / semantic
+search. CDN signed cookies. Experimental Skills-over-MCP primitive. See `10` for the deferred
+prod-hardening list (rate limiting, backups, content scanning).
+
+Server-side auto-tagging and generated summaries — previously listed here as deferred — are
+**implemented** as of decision #46 (automatic artifact enrichment via AWS Bedrock).

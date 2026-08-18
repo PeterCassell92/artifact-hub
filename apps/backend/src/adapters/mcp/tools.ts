@@ -29,6 +29,7 @@ import {
   listRelationshipsByType,
 } from "../../database-service/relationships";
 import { createShareLink } from "../../database-service/shareLinks";
+import { listEnrichments } from "../../database-service/enrichment";
 import { findUserWithGroupsById, toUserView } from "../../database-service/adminUsers";
 import { listGroups, toGroupView } from "../../database-service/groups";
 import { getObjectBuffer } from "../../storage/s3";
@@ -36,6 +37,7 @@ import { getEnv } from "../../env";
 import {
   accessHistoryTable,
   commentsTable,
+  enrichmentHistoryTable,
   groupsTable,
   ownedArtifactsTable,
   relationshipsByTypeTable,
@@ -46,6 +48,7 @@ import {
   CommentOnArtifactInput,
   CreateShareLinkInput,
   GetArtifactInput,
+  GetEnrichmentStatusInput,
   GetUserDetailsInput,
   isValidPublishArtifactInput,
   LinkArtifactsInput,
@@ -140,6 +143,18 @@ Arguments: id (artifact uuid), cursor (optional, from a prior call's nextCursor)
 Result is metadata-only: { accessEvents: [{ id, userId, userName, userEmail, action: "view"|"download", route: "ui"|"share_link"|"mcp", decision: "allowed"|"denied", denyReason?, at }], nextCursor }, plus a markdown table.
 
 Example: get_access_history({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
+
+const GET_ENRICHMENT_STATUS_DESCRIPTION = `Reads back the AI-enrichment job history for an artifact — status (pending/running/completed/failed/skipped), the generated summary/topics once done, which tags it added, and every relationship it considered (with a confidence score and whether it cleared the threshold and got created). Enrichment runs automatically after every publish, plus whenever the owner re-runs it from the artifact detail page. Use when the owner asks "did enrichment finish", "why didn't it find a summary yet", or "what did the AI suggest for this artifact".
+
+Owner-only — unlike list_comments/list_artifact_relationships (which only need view access), this tool requires you to OWN the artifact; it refuses for a non-owner even if they can otherwise view the artifact itself, same rule as get_access_history.
+
+Do NOT use this to trigger a NEW enrichment run — there is no MCP tool for that in v1 (rerun is a web-app-only action on the artifact detail page). Do NOT use this to read the tags/summary themselves for everyday use — those are already part of the artifact's normal metadata (visible via get_artifact/list_artifacts) once a run completes; use this tool specifically for the job's own status/history, not as the primary way to read AI-generated content.
+
+Arguments: id (artifact uuid).
+
+Result is metadata-only: { items: [{ id, status, trigger, requestedByName, startedAt, completedAt, error, summary, topics, tagsAdded, relationshipsProposed: [{ toId, type, confidence, accepted }], createdAt }] }, newest first, plus a markdown table.
+
+Example: get_enrichment_status({ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" }).`;
 
 const LINK_ARTIFACTS_DESCRIPTION = `Links two existing artifacts you own the first of, recording that one is a version/derivative/general relative of the other. Use when the user says something like "this supersedes the old report" or "this is the compiled version of the diagram I published earlier" AFTER both artifacts already exist. For linking at the moment of publishing a brand-new artifact, pass relationships directly to publish_artifact instead — that's the same effect in one fewer call.
 
@@ -460,6 +475,26 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
 
       const { items, nextCursor } = await listAccessEvents(artifact.id, { cursor: args.cursor, limit: args.limit });
       return toolJson({ accessEvents: items, nextCursor }, accessHistoryTable(items));
+    }),
+  );
+
+  server.registerTool(
+    "get_enrichment_status",
+    {
+      title: "Get artifact enrichment status",
+      description: GET_ENRICHMENT_STATUS_DESCRIPTION,
+      inputSchema: GetEnrichmentStatusInput,
+    },
+    wrap("get_enrichment_status", async (args) => {
+      const artifact = await findArtifactForDetail(args.id);
+      if (!artifact) return toolError("Artifact not found.");
+
+      if (!canManagePolicy(viewer, toPolicy(artifact))) {
+        return toolError("Only the artifact's owner can view its enrichment status.");
+      }
+
+      const items = await listEnrichments(artifact.id);
+      return toolJson({ items }, enrichmentHistoryTable(items));
     }),
   );
 

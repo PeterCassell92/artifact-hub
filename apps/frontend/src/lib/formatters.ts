@@ -1,5 +1,12 @@
 import { format, formatDistanceToNow } from "date-fns";
-import type { AccessEventView, ArtifactRelationshipSummary, ArtifactSummary, AudienceType, ExpiryOption } from "contracts";
+import type {
+  AccessEventView,
+  ArtifactRelationshipSummary,
+  ArtifactSummary,
+  AudienceType,
+  EnrichmentStatus,
+  ExpiryOption,
+} from "contracts";
 
 export function formatPublishedAt(iso: string): string {
   return format(new Date(iso), "MMM d, yyyy");
@@ -122,6 +129,8 @@ export function accessRouteLabel(route: AccessEventView["route"]): string {
       return "Share link";
     case "mcp":
       return "Agent";
+    case "system":
+      return "AI enrichment";
   }
 }
 
@@ -138,6 +147,21 @@ const DENY_REASON_LABELS: Record<string, string> = {
 export function accessDenyReasonLabel(denyReason: string | undefined): string {
   if (!denyReason) return "denied";
   return DENY_REASON_LABELS[denyReason] ?? denyReason;
+}
+
+export function enrichmentStatusLabel(status: EnrichmentStatus): string {
+  switch (status) {
+    case "pending":
+      return "Queued";
+    case "running":
+      return "Analyzing…";
+    case "completed":
+      return "Done";
+    case "failed":
+      return "Failed";
+    case "skipped":
+      return "Not applicable";
+  }
 }
 
 export function formatBytes(bytes: number): string {

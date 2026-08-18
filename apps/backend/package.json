@@ -34,6 +34,8 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",
     "@aws-sdk/s3-request-presigner": "^3.1111.0",
+    "@langchain/aws": "^1.4.4",
+    "@langchain/core": "^1.2.8",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "@prisma/client": "^6.2.1",
     "contracts": "workspace:*",

@@ -55,6 +55,8 @@ const outgoing: ArtifactRelationshipSummary = {
   otherArtifact: { id: "artifact-2", title: "Q3 architecture diagram", kind: "diagram", ownerId: "u1" },
   createdByName: "Ada Lovelace",
   createdAt: "2026-01-15T00:00:00.000Z",
+  source: "human",
+  confidence: null,
 };
 
 const incoming: ArtifactRelationshipSummary = {
@@ -65,6 +67,8 @@ const incoming: ArtifactRelationshipSummary = {
   otherArtifact: null,
   createdByName: "Ada Lovelace",
   createdAt: "2026-01-15T00:00:00.000Z",
+  source: "human",
+  confidence: null,
 };
 
 describe("RelatedArtifacts", () => {

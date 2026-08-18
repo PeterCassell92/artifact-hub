@@ -5,3 +5,4 @@ export * from "./common";
 export * from "./artifact";
 export * from "./collaboration";
 export * from "./admin";
+export * from "./enrichment";

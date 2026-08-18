@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ArtifactRelationshipInput, ArtifactRelationshipLinkResult } from "./collaboration";
-import { ArtifactKind, AudienceType, ExpiryOption } from "./enums";
+import { ArtifactKind, AudienceType, EnrichmentSource, ExpiryOption } from "./enums";
 import { paginated } from "./common";
 
 /** Audience + expiry, unrefined — the shared base for AccessPolicyInput (policy edits) and
@@ -109,6 +109,15 @@ export type ArtifactSummary = z.infer<typeof ArtifactSummary>;
 export const ArtifactListResponse = paginated(ArtifactSummary);
 export type ArtifactListResponse = z.infer<typeof ArtifactListResponse>;
 
+/** A tag as shown on the detail page — `source`/`confidence` distinguish human-entered tags
+ * from ones the enrichment job proposed (docs/architecture/01 decision #46). */
+export const ArtifactTagView = z.object({
+  name: z.string(),
+  source: EnrichmentSource,
+  confidence: z.number().min(0).max(1).nullable(),
+});
+export type ArtifactTagView = z.infer<typeof ArtifactTagView>;
+
 /** GET /api/artifacts/:id response — summary fields plus what the detail view needs. */
 export const ArtifactDetail = ArtifactSummary.extend({
   description: z.string().nullable(),
@@ -116,6 +125,12 @@ export const ArtifactDetail = ArtifactSummary.extend({
   /** Owner or admin — gates whether the SPA shows the Access History panel and whether
    * `GET .../access-events` will succeed for this viewer. */
   canViewAccessEvents: z.boolean(),
+  tags: z.array(ArtifactTagView),
+  /** AI-generated enrichment output (docs/architecture/01 decision #46) — null/empty until the
+   * first enrichment run completes. See `GET .../enrichment` for the job history that produced
+   * these. */
+  aiSummary: z.string().nullable(),
+  aiTopics: z.array(z.string()),
 });
 export type ArtifactDetail = z.infer<typeof ArtifactDetail>;
 

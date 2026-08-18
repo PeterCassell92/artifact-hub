@@ -33,12 +33,13 @@ points at MailCatcher in dev, Resend in prod; the S3 client points at MinIO in d
 | **Node + Yarn** | run the apps | pinned by **Volta** (root `package.json`); `cd` into the repo auto-switches. CI/Corepack fall back to `packageManager`. |
 | **Docker** (+ compose) | runs the datastores/mail/storage above; also Testcontainers | Docker Desktop or engine. |
 | **Auth0 — `ArtifactHub-Dev` tenant** ⬅ *the one real external service* | all sign-in is passwordless magic link; the backend **won't boot** without `AUTH0_*` set, and both `/api` and `/mcp` validate real tokens | Auth0 is **one tenant per environment** ([`02` §1](../architecture/02-auth-identity-and-admin.md)); dev uses **`ArtifactHub-Dev`**. It needs a **passwordless (email) connection**, a **SPA application** (frontend), two **APIs/audiences** (`/api/*` + `/mcp`), and an **M2M application** for the Management API. **Full step-by-step in [Auth0 tenant setup](#auth0-tenant-setup-per-environment) below.** Magic-link emails are read from the **Auth0 tenant log**, not MailCatcher (see [`email-catcher.md`](email-catcher.md)). |
+| **AWS Bedrock** — for artifact enrichment (decision #46) | the enrichment worker calls Claude Sonnet via Bedrock after every publish | Optional in dev — the backend boots and the outbox drain loop runs fine without it; unconfigured enrichment jobs just fail (retried, then marked `failed`) rather than blocking anything else. Needs an AWS account with Bedrock model access enabled for the target model, plus an IAM user/key scoped to `bedrock:InvokeModel`. Credentials → `BEDROCK_AWS_ACCESS_KEY_ID` / `BEDROCK_AWS_SECRET_ACCESS_KEY` / `BEDROCK_AWS_REGION` (backend `.env`; **a separate credential pair from `AWS_ENDPOINT_URL_S3`/`AWS_REGION`**, which point at Tigris/MinIO, not real AWS). Model id and thresholds are **not** env vars — see [`config.ts`](../../apps/backend/src/config.ts) (git-committed, code-reviewed changes instead of an invisible `fly secrets set`). |
 
 **Env files to create** (copy the committed `.env.example`s; all are git-ignored):
 `./.env` (set `POSTGRES_PASSWORD`), `apps/backend/.env`, `apps/frontend/.env`.
 
-> **Not required in dev:** Resend, Tigris, Fly, Netlify — all substituted by the Docker services or
-> not exercised locally.
+> **Not required in dev:** Resend, Tigris, Fly, Netlify, Bedrock — all substituted by the Docker
+> services, not exercised locally, or (Bedrock) simply optional — see the row above.
 
 ---
 
@@ -163,6 +164,7 @@ Provisioned once via the [`deploy-runbook.md`](deploy-runbook.md); the committed
 | **Fly Managed Postgres** | production database | `fly mpg create` + `fly mpg attach` (sets `DATABASE_URL` secret) |
 | **Tigris** (S3-compatible) | production object storage | `fly storage create` (injects `AWS_*` + `BUCKET_NAME`) |
 | **Resend** | invitation/notification email over SMTP | Resend account + verified sender domain; creds as `fly secrets` (`SMTP_*`) |
+| **AWS Bedrock** | artifact enrichment (decision #46) — Claude Sonnet calls from the outbox worker | IAM user/key scoped to `bedrock:InvokeModel`, model access enabled for the target model; creds as `fly secrets` (`BEDROCK_AWS_*`) |
 | **Auth0 — `ArtifactHub-Prod` tenant** | IdP: SPA login + `/mcp` OAuth Resource Server | separate prod tenant; its own app/audiences + Netlify/custom-domain callback+logout URLs; client secret + any Management API creds as `fly secrets` |
 | **Netlify** | serves the built SPA (`apps/frontend/dist`) | `netlify.toml` build config; `VITE_*` set as Netlify build env vars |
 | **DNS / domains** | app + API/MCP hostnames, TLS | provider of choice; point at Netlify + Fly |

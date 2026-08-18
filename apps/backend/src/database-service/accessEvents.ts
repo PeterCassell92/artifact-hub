@@ -16,13 +16,16 @@ export interface RecordAccessEventInput {
 /**
  * Writes the artifact-access audit trail (docs/models/access-event.md) — both allowed and
  * denied attempts, so revocation/expiry are provable. Called from every access path (ui /
- * share_link / mcp); Phase 2 only wires the `ui` route.
+ * share_link / mcp / system); Phase 2 only wires the `ui` route.
  *
  * An **allowed** event also touches `Artifact.lastAccessedAt` (architecture/01 §5 decision #45)
- * so `sort=lastAccessed` (frontend/02 §3) has a stable, indexed column to order/cursor on.
+ * so `sort=lastAccessed` (frontend/02 §3) has a stable, indexed column to order/cursor on — except
+ * for `route: "system"` (the enrichment job's own content reads, decision #46), which shouldn't
+ * make an artifact look freshly "viewed" every time a background job runs over it.
  */
 export async function recordAccessEvent(input: RecordAccessEventInput): Promise<void> {
   const at = new Date();
+  const bumpsLastAccessed = input.decision === "allowed" && input.route !== "system";
 
   await prisma.$transaction([
     prisma.accessEvent.create({
@@ -37,7 +40,7 @@ export async function recordAccessEvent(input: RecordAccessEventInput): Promise<
         at,
       },
     }),
-    ...(input.decision === "allowed"
+    ...(bumpsLastAccessed
       ? [prisma.artifact.update({ where: { id: input.artifactId }, data: { lastAccessedAt: at } })]
       : []),
   ]);

@@ -18,6 +18,7 @@ import { findGroupsByNames } from "./groups";
 import { deleteObject, getPresignedUploadUrl, headObject } from "../storage/s3";
 import { enqueueOutboxEvent, type EnqueueOutboxEventInput } from "./outbox";
 import { buildPublishNotificationEvents } from "./artifactRecipients";
+import { enqueueEnrichment } from "./enrichment";
 
 export const withPolicyJoins = Prisma.validator<Prisma.ArtifactDefaultArgs>()({
   include: {
@@ -25,6 +26,7 @@ export const withPolicyJoins = Prisma.validator<Prisma.ArtifactDefaultArgs>()({
     allowedUsers: { select: { userId: true } },
     allowedGroups: { select: { groupId: true } },
     _count: { select: { comments: true } },
+    tags: { include: { tag: { select: { name: true } } } },
   },
 });
 export type ArtifactWithPolicyJoins = Prisma.ArtifactGetPayload<typeof withPolicyJoins>;
@@ -80,6 +82,9 @@ export function toDetail(
     description: artifact.description,
     canManagePolicy,
     canViewAccessEvents: canManagePolicy || viewer.role === "admin",
+    tags: artifact.tags.map((t) => ({ name: t.tag.name, source: t.source, confidence: t.confidence })),
+    aiSummary: artifact.aiSummary,
+    aiTopics: artifact.aiTopics,
   };
 }
 
@@ -397,6 +402,38 @@ export async function attachTags(artifactId: string, tagNames: string[]): Promis
   }
 }
 
+/**
+ * The enrichment job's tag writer — unlike `attachTags` (used only at publish time, when the
+ * artifact is brand new and duplicates can't happen), this runs against an artifact that may
+ * already carry some of these tags, so it upserts the link instead of `create`-ing it: a tag the
+ * artifact already has (whatever its `source`) is left untouched rather than erroring on the
+ * `[artifactId,tagId]` unique constraint or overwriting a human-entered tag's provenance.
+ */
+export async function attachAiTags(
+  artifactId: string,
+  tags: { name: string; confidence: number }[],
+): Promise<void> {
+  for (const { name, confidence } of tags) {
+    const tag = await prisma.tag.upsert({ where: { name }, update: {}, create: { name } });
+    await prisma.artifactTag.upsert({
+      where: { artifactId_tagId: { artifactId, tagId: tag.id } },
+      update: {},
+      create: { artifactId, tagId: tag.id, source: "ai", confidence },
+    });
+  }
+}
+
+/** Writes the enrichment job's summary/topics onto the artifact itself. */
+export async function setArtifactAiMetadata(
+  artifactId: string,
+  input: { summary: string; topics: string[] },
+): Promise<void> {
+  await prisma.artifact.update({
+    where: { id: artifactId },
+    data: { aiSummary: input.summary, aiTopics: input.topics },
+  });
+}
+
 function sanitizeKeySegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -504,9 +541,15 @@ export async function finalizeArtifact(
     return { ok: false, reason: "too_large" };
   }
 
-  await prisma.artifact.update({
-    where: { id: artifactId },
-    data: { sizeBytes: BigInt(head.sizeBytes), checksumSha256: input.checksumSha256 },
+  await prisma.$transaction(async (tx) => {
+    await tx.artifact.update({
+      where: { id: artifactId },
+      data: { sizeBytes: BigInt(head.sizeBytes), checksumSha256: input.checksumSha256 },
+    });
+    // Automatic AI enrichment (docs/architecture/01 decision #46) — `finalizeArtifact` is the one
+    // point both publish paths (MCP `publish_artifact`'s finish call and the HTTP
+    // `.../finalize` route) converge on, so this is the single trigger point for both.
+    await enqueueEnrichment({ artifactId, requestedById: ownerId, trigger: "publish" }, tx);
   });
 
   const updated = await findArtifactForDetail(artifactId);

@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { isTextLike } from "../../lib/contentType";
 
 /** Tool-level failure (auth/not-found/validation) — surfaced as `isError`, not a JSON-RPC error,
  * so the agent sees it in the transcript and can react (per MCP convention). */
@@ -18,16 +19,6 @@ export function toolJson(payload: unknown, ...extraText: string[]): CallToolResu
 export const SMALL_CONTENT_MAX_BYTES = 512 * 1024;
 
 export type ArtifactContentPresentation = "image" | "embedded_text" | "embedded_blob" | "pointer";
-
-function isTextLike(contentType: string): boolean {
-  return (
-    contentType.startsWith("text/") ||
-    contentType === "application/json" ||
-    contentType === "application/xml" ||
-    contentType.endsWith("+json") ||
-    contentType.endsWith("+xml")
-  );
-}
 
 /** How `get_artifact` should present a given artifact's bytes (docs/architecture/05 §4:
  * "small image → image block; small text/PDF → embedded resource; else → pointer"). */

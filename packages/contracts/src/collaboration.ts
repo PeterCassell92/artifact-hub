@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AccessAction, AccessDecision, AccessRoute, ArtifactKind, RelationType } from "./enums";
+import { AccessAction, AccessDecision, AccessRoute, ArtifactKind, EnrichmentSource, RelationType } from "./enums";
 import { paginated } from "./common";
 
 /** A comment as shown in the UI/MCP (body, author name, date). */
@@ -59,6 +59,10 @@ export const ArtifactRelationshipSummary = z.object({
     .nullable(),
   createdByName: z.string().nullable(),
   createdAt: z.string().datetime(),
+  /** Human-linked (link_artifacts/publish_artifact) vs. proposed by the enrichment job
+   * (docs/architecture/01 decision #46); `confidence` is only set for `source: "ai"`. */
+  source: EnrichmentSource,
+  confidence: z.number().min(0).max(1).nullable(),
 });
 export type ArtifactRelationshipSummary = z.infer<typeof ArtifactRelationshipSummary>;
 
@@ -118,6 +122,8 @@ export const RelationshipRow = z.object({
   to: RelationshipEndpoint.nullable(),
   createdByName: z.string().nullable(),
   createdAt: z.string().datetime(),
+  source: EnrichmentSource,
+  confidence: z.number().min(0).max(1).nullable(),
 });
 export type RelationshipRow = z.infer<typeof RelationshipRow>;
 

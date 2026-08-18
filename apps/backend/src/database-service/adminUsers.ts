@@ -1,12 +1,22 @@
 import type { User } from "@prisma/client";
 import type { PublicUserView, Role, UserView } from "contracts";
 import { prisma } from "../db";
+import type { Viewer } from "../core/authz";
 
 const withGroups = { include: { memberships: { include: { group: true } } } } as const;
 type UserWithGroups = User & { memberships: { group: { name: string } }[] };
 
 export async function listUsersWithGroups(): Promise<UserWithGroups[]> {
   return prisma.user.findMany({ orderBy: { createdAt: "desc" }, ...withGroups });
+}
+
+/** Builds a `core/authz` `Viewer` for a user id — the same shape `requireAuth` puts on
+ * `req.viewer` from a validated token, but for callers that only have an id (e.g. the enrichment
+ * worker, acting on the artifact owner's behalf per docs/architecture/01 decision #46). */
+export async function loadViewerById(id: string): Promise<Viewer | null> {
+  const user = await prisma.user.findUnique({ where: { id }, include: { memberships: true } });
+  if (!user) return null;
+  return { id: user.id, status: user.status, groupIds: user.memberships.map((m) => m.groupId) };
 }
 
 /** Single-row lookup for GET /api/me — the SPA's "who am I" bootstrap. */

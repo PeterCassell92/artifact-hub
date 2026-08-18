@@ -60,6 +60,20 @@ enum AccessRoute {
   ui
   share_link
   mcp
+  system
+}
+
+enum EnrichmentStatus {
+  pending
+  running
+  completed
+  failed
+  skipped
+}
+
+enum EnrichmentSource {
+  human
+  ai
 }
 
 enum AccessAction {
@@ -92,6 +106,7 @@ model User {
   invitesSent          Invitation[]           @relation("invitedBy")
   accessEvents         AccessEvent[]
   createdRelationships ArtifactRelationship[]
+  requestedEnrichments ArtifactEnrichment[]
 }
 
 model Group {
@@ -154,6 +169,11 @@ model Artifact {
   language       String?
   metadata       Json         @default("{}") // free-form catch-all
 
+  // AI-generated enrichment output (see ArtifactEnrichment for the job/run history that produced
+  // these) — first-class columns rather than buried in `metadata` so they're easy to display/filter.
+  aiSummary String?
+  aiTopics  String[] @default([])
+
   // access policy (one per artifact — see docs/architecture/03)
   audienceType      AudienceType @default(specific_users)
   expiresAt         DateTime? // null = never
@@ -180,6 +200,7 @@ model Artifact {
   relFrom       ArtifactRelationship[]  @relation("from")
   relTo         ArtifactRelationship[]  @relation("to")
   accessEvents  AccessEvent[]
+  enrichments   ArtifactEnrichment[]
 
   @@index([ownerId, createdAt])
   @@index([audienceType])
@@ -222,6 +243,12 @@ model Tag {
 model ArtifactTag {
   artifactId String
   tagId      String
+
+  // Provenance — every row before this migration is a human-entered tag (backfilled `human`);
+  // `confidence` is only ever set for `source = ai` rows (the enrichment job's own score).
+  source     EnrichmentSource @default(human)
+  confidence Float?
+  createdAt  DateTime         @default(now())
 
   artifact Artifact @relation(fields: [artifactId], references: [id])
   tag      Tag      @relation(fields: [tagId], references: [id])
@@ -267,11 +294,42 @@ model ArtifactRelationship {
   createdById String
   createdAt   DateTime     @default(now())
 
+  // Provenance — `createdById` stays the acting human/owner even for `source = ai` rows (no
+  // system-actor concept in this schema); `confidence` is the enrichment job's own score,
+  // only ever set for `source = ai` rows.
+  source     EnrichmentSource @default(human)
+  confidence Float?
+
   from      Artifact @relation("from", fields: [fromId], references: [id])
   to        Artifact @relation("to", fields: [toId], references: [id])
   createdBy User     @relation(fields: [createdById], references: [id])
 
   @@unique([fromId, toId, type])
+}
+
+// One row per enrichment run (append-only — a rerun doesn't erase the previous attempt).
+// The queryable status/result record surfaced to the SPA (polling + rerun) and the
+// `get_enrichment_status` MCP tool; the actual side effects (tags, relationships, summary) land
+// on Artifact/ArtifactTag/ArtifactRelationship, this is the job's own audit trail.
+model ArtifactEnrichment {
+  id                    String           @id @default(uuid())
+  artifactId            String
+  status                EnrichmentStatus @default(pending)
+  trigger               String // "publish" | "rerun"
+  requestedById         String
+  startedAt             DateTime?
+  completedAt           DateTime?
+  error                 String?
+  summary               String?
+  topics                String[]         @default([])
+  tagsAdded             String[]         @default([])
+  relationshipsProposed Json             @default("[]") // [{ toId, type, confidence, accepted }]
+  createdAt             DateTime         @default(now())
+
+  artifact    Artifact @relation(fields: [artifactId], references: [id])
+  requestedBy User     @relation(fields: [requestedById], references: [id])
+
+  @@index([artifactId, createdAt])
 }
 
 // ─────────────────────────── audit & system ───────────────────────────

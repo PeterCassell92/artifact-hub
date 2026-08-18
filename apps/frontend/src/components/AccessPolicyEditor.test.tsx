@@ -48,6 +48,9 @@ const artifact: ArtifactDetail = {
   ownerId: "owner-1",
   canManagePolicy: true,
   canViewAccessEvents: true,
+  tags: [],
+  aiSummary: null,
+  aiTopics: [],
 };
 
 function renderWithStore() {

@@ -10,6 +10,7 @@ import { provisionAuth0User } from "./workers/handlers/auth0ProvisionUser";
 import { sendNewArtifactAccessEmail } from "./workers/handlers/newArtifactAccess";
 import { sendAccessRevokedEmail } from "./workers/handlers/accessRevoked";
 import { sendNewCommentEmail } from "./workers/handlers/newComment";
+import { enrichArtifact } from "./workers/handlers/artifactEnrich";
 
 const env = getEnv();
 const app = createApp();
@@ -28,9 +29,17 @@ if (env.NODE_ENV === "production" && (!env.SMTP_USER || !env.SMTP_PASS)) {
   );
 }
 
+// Same reasoning as the SMTP check above, for the enrichment job's Bedrock credentials
+// (docs/architecture/01 decision #46) — fail loudly at boot rather than silently after the first
+// "artifact.enrich" event exhausts its outbox retries.
+if (env.NODE_ENV === "production" && (!env.BEDROCK_AWS_ACCESS_KEY_ID || !env.BEDROCK_AWS_SECRET_ACCESS_KEY)) {
+  logger.warn("BEDROCK_AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY are not set in production — artifact enrichment will fail");
+}
+
 // Transactional outbox drain loop (docs/architecture/02 §6) — rides the same always-on machine
 // kept warm by fly.toml's min_machines_running=1 (for the /mcp OAuth path), so this adds no new
-// always-on infra cost.
+// always-on infra cost. `artifact.enrich` (decision #46) is the same pattern extended to a
+// Bedrock call instead of Resend/Auth0 — no separate serverless/job infra needed.
 startOutboxDrainLoop(
   {
     "invitation.send": sendInvitationEmail,
@@ -38,6 +47,7 @@ startOutboxDrainLoop(
     "artifact.new_access": sendNewArtifactAccessEmail,
     "artifact.access_revoked": sendAccessRevokedEmail,
     "artifact.new_comment": sendNewCommentEmail,
+    "artifact.enrich": enrichArtifact,
   },
   env.OUTBOX_POLL_INTERVAL_MS,
 );

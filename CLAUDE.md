@@ -39,8 +39,14 @@ backend (Express) serves both `/api/*` and `/mcp` over a shared `core` domain la
   No in-place edit; retract and re-link instead. See [models/collaboration.md](docs/models/collaboration.md).
 - **One owner-controlled access policy per artifact**, re-evaluated on every request → revocation
   is instant; **share links are pure locators**, never bearer tokens of access.
-- **The backend makes no LLM calls** — all logic is deterministic. Review summaries are an MCP
-  **Prompt** run by the client's model.
+- **The backend makes no LLM calls, with one scoped exception** — authorization/policy logic is
+  deterministic; review summaries are an MCP **Prompt** run by the client's model. The exception
+  is **automatic artifact enrichment** (docs/architecture/01 decision #46): a background job
+  (`artifact.enrich` outbox event, drained by the existing outbox worker) calls Claude Sonnet via
+  AWS Bedrock after every publish to generate a summary/topics, propose tags, and propose
+  relationships to the owner's other artifacts above a confidence threshold — advisory content
+  only, never an input to an access decision. Owner-only status/rerun via the artifact detail
+  page and the `get_enrichment_status` MCP tool.
 - **Files never come back as MCP tool results** — agent file delivery is via the
   `artifact://<id>` **Resource**; presigned object-store URLs are confined to the browser/download path.
 - **Group membership is admin-assigned and immutable to the user** — there is no self-service

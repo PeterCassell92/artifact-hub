@@ -3,6 +3,7 @@ import type {
   AccessEventListResponse,
   AccessPolicyInput,
   ArtifactDetail,
+  ArtifactEnrichmentListResponse,
   ArtifactFacetOptions,
   ArtifactListQuery,
   ArtifactListResponse,
@@ -22,6 +23,7 @@ import type {
   InvitationView,
   PublicUserView,
   ShareLinkView,
+  TriggerEnrichmentResponse,
   UserView,
 } from "contracts";
 
@@ -51,7 +53,18 @@ export const api = createApi({
       return headers;
     },
   }),
-  tagTypes: ["Me", "Artifact", "ArtifactList", "Comment", "Relationship", "AccessEvent", "User", "Group", "Invitation"],
+  tagTypes: [
+    "Me",
+    "Artifact",
+    "ArtifactList",
+    "Comment",
+    "Relationship",
+    "AccessEvent",
+    "Enrichment",
+    "User",
+    "Group",
+    "Invitation",
+  ],
   endpoints: (builder) => ({
     getMe: builder.query<UserView, void>({
       query: () => "/me",
@@ -142,6 +155,18 @@ export const api = createApi({
         params: cursor ? { cursor } : {},
       }),
       providesTags: (_result, _error, { artifactId }) => [{ type: "AccessEvent", id: artifactId }],
+    }),
+
+    // Owner-only (docs/architecture/01 decision #46) — refetches on its own `pollingInterval`
+    // while a run is pending/running (EnrichmentPanel sets it), stopping once terminal.
+    getEnrichmentHistory: builder.query<ArtifactEnrichmentListResponse, string>({
+      query: (artifactId) => `/artifacts/${artifactId}/enrichment`,
+      providesTags: (_result, _error, artifactId) => [{ type: "Enrichment", id: artifactId }],
+    }),
+
+    triggerEnrichment: builder.mutation<TriggerEnrichmentResponse, string>({
+      query: (artifactId) => ({ url: `/artifacts/${artifactId}/enrich`, method: "POST" }),
+      invalidatesTags: (_result, _error, artifactId) => [{ type: "Enrichment", id: artifactId }],
     }),
 
     updatePolicy: builder.mutation<ArtifactDetail, { artifactId: string; policy: AccessPolicyInput }>({
@@ -264,6 +289,8 @@ export const {
   useCreateRelationshipMutation,
   useDeleteRelationshipMutation,
   useGetAccessEventsQuery,
+  useGetEnrichmentHistoryQuery,
+  useTriggerEnrichmentMutation,
   useUpdatePolicyMutation,
   useRevokeAccessMutation,
   useCreateArtifactMutation,

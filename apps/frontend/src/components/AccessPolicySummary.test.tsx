@@ -20,6 +20,9 @@ const baseArtifact: ArtifactDetail = {
   description: null,
   canManagePolicy: false,
   canViewAccessEvents: false,
+  tags: [],
+  aiSummary: null,
+  aiTopics: [],
 };
 
 describe("AccessPolicySummary", () => {

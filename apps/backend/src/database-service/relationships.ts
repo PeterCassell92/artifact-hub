@@ -13,6 +13,14 @@ export type CreateRelationshipResult =
       reason: "self_link" | "to_not_found" | "to_not_viewable" | "duplicate";
     };
 
+/** Extra fields only the enrichment job sets — never exposed on the user-facing
+ * `ArtifactRelationshipInput` contract (`link_artifacts`/`publish_artifact` always create
+ * `source: "human"` rows). */
+export interface CreateRelationshipProvenance {
+  source?: "human" | "ai";
+  confidence?: number;
+}
+
 /**
  * Links `fromId` -> `input.toId`. Ownership of `fromId` is the caller's responsibility to check
  * before calling this (matches `updateArtifactPolicy`/`revokeArtifactAccess` — owner-only routes
@@ -25,6 +33,7 @@ export async function createRelationship(
   fromId: string,
   linker: Viewer,
   input: ArtifactRelationshipInput,
+  provenance: CreateRelationshipProvenance = {},
 ): Promise<CreateRelationshipResult> {
   if (fromId === input.toId) {
     return { ok: false, toId: input.toId, type: input.type, reason: "self_link" };
@@ -42,7 +51,15 @@ export async function createRelationship(
 
   try {
     const relationship = await prisma.artifactRelationship.create({
-      data: { fromId, toId: input.toId, type: input.type, note: input.note, createdById: linker.id },
+      data: {
+        fromId,
+        toId: input.toId,
+        type: input.type,
+        note: input.note,
+        createdById: linker.id,
+        source: provenance.source ?? "human",
+        confidence: provenance.confidence,
+      },
     });
     return { ok: true, relationshipId: relationship.id, createdAt: relationship.createdAt };
   } catch (err) {
@@ -134,6 +151,8 @@ export async function listRelationships(
           : null,
       createdByName: row.createdBy.name,
       createdAt: row.createdAt.toISOString(),
+      source: row.source,
+      confidence: row.confidence,
     };
   });
 }
@@ -184,6 +203,8 @@ export async function listRelationshipsByType(
         : null,
       createdByName: row.createdBy.name,
       createdAt: row.createdAt.toISOString(),
+      source: row.source,
+      confidence: row.confidence,
     })),
     nextCursor,
   };

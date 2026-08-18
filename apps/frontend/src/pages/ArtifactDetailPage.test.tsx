@@ -22,6 +22,9 @@ const baseArtifact: ArtifactDetail = {
   description: null,
   canManagePolicy: false,
   canViewAccessEvents: false,
+  tags: [],
+  aiSummary: null,
+  aiTopics: [],
 };
 
 let queryResult: { data?: ArtifactDetail; isLoading: boolean; error?: unknown };
@@ -52,6 +55,9 @@ jest.unstable_mockModule("../components/RelatedArtifacts", () => ({
 }));
 jest.unstable_mockModule("../components/AccessHistoryPanel", () => ({
   AccessHistoryPanel: () => <div>access history panel</div>,
+}));
+jest.unstable_mockModule("../components/EnrichmentPanel", () => ({
+  EnrichmentPanel: () => <div>enrichment panel</div>,
 }));
 
 const { ArtifactDetailPage } = await import("./ArtifactDetailPage");

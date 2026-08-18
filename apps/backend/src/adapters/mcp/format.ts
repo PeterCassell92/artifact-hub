@@ -145,3 +145,18 @@ export function accessHistoryTable(items: AccessEventRow[]): string {
   );
   return ["| at | user | action | route | decision |", "|---|---|---|---|---|", ...rows].join("\n");
 }
+
+interface EnrichmentRow {
+  status: string;
+  trigger: string;
+  requestedByName: string;
+  createdAt: string;
+}
+
+/** `get_enrichment_status` table — newest first, matching `listEnrichments()`'s ordering. */
+export function enrichmentHistoryTable(items: EnrichmentRow[]): string {
+  const rows = items.map(
+    (e) => `| ${e.createdAt.slice(0, 16).replace("T", " ")} | ${e.status} | ${e.trigger} | ${e.requestedByName} |`,
+  );
+  return ["| createdAt | status | trigger | requestedBy |", "|---|---|---|---|", ...rows].join("\n");
+}

@@ -5,6 +5,7 @@ import {
   AccessEventListQuery,
   AccessPolicyInput,
   ArtifactDetail,
+  ArtifactEnrichmentListResponse,
   ArtifactFacetOptions,
   ArtifactListQuery,
   ArtifactListResponse,
@@ -19,6 +20,7 @@ import {
   FinalizeArtifactInput,
   MAX_ARTIFACT_SIZE_BYTES,
   ShareLinkView,
+  TriggerEnrichmentResponse,
 } from "contracts";
 import { canCreateShareLink, canManagePolicy, canView } from "../../../core/authz";
 import { computeExpiresAt } from "../../../core/policy";
@@ -43,6 +45,7 @@ import { createComment, listComments } from "../../../database-service/comments"
 import { recordAdminAuditLog } from "../../../database-service/adminAuditLog";
 import { createRelationship, createRelationships, deleteRelationship, listRelationships } from "../../../database-service/relationships";
 import { createShareLink } from "../../../database-service/shareLinks";
+import { enqueueEnrichment, listEnrichments } from "../../../database-service/enrichment";
 import { getPresignedDownloadUrl } from "../../../storage/s3";
 import { getEnv } from "../../../env";
 import { sendError } from "../errors";
@@ -202,6 +205,58 @@ export function createArtifactsRouter(): Router {
 
     const { items, nextCursor } = await listAccessEvents(artifact.id, query.data);
     res.json(AccessEventListResponse.parse({ items, nextCursor }));
+  });
+
+  // GET /api/artifacts/:id/enrichment — the AI-enrichment job history (docs/architecture/01
+  // decision #46), newest first. Owner-only, same gate as /access-events — this is "how did the
+  // background job that ran on my artifact behave", not "can I view this artifact".
+  router.get("/:id/enrichment", async (req, res) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact id");
+      return;
+    }
+
+    const artifact = await findArtifactForDetail(params.data.id);
+    if (!artifact) {
+      sendError(res, 404, "not_found", "Artifact not found");
+      return;
+    }
+
+    const viewer = req.viewer!;
+    if (!canManagePolicy(viewer, toPolicy(artifact))) {
+      sendError(res, 403, "forbidden", "Only the owner can view this artifact's enrichment history");
+      return;
+    }
+
+    const items = await listEnrichments(artifact.id);
+    res.json(ArtifactEnrichmentListResponse.parse({ items }));
+  });
+
+  // POST /api/artifacts/:id/enrich — owner-only rerun trigger. Always starts a fresh run (its own
+  // idempotencyKey, distinct from the publish-triggered one) rather than reusing/cancelling any
+  // prior run — history is append-only (see ArtifactEnrichment's doc comment).
+  router.post("/:id/enrich", async (req, res) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact id");
+      return;
+    }
+
+    const artifact = await findArtifactForDetail(params.data.id);
+    if (!artifact) {
+      sendError(res, 404, "not_found", "Artifact not found");
+      return;
+    }
+
+    const viewer = req.viewer!;
+    if (!canManagePolicy(viewer, toPolicy(artifact))) {
+      sendError(res, 403, "forbidden", "Only the owner can re-run enrichment for this artifact");
+      return;
+    }
+
+    const { enrichmentId } = await enqueueEnrichment({ artifactId: artifact.id, requestedById: viewer.id, trigger: "rerun" });
+    res.json(TriggerEnrichmentResponse.parse({ enrichmentId, status: "pending" }));
   });
 
   // POST /api/artifacts/:id/finalize — confirms the presigned-PUT upload actually landed

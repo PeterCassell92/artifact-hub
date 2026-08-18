@@ -66,6 +66,14 @@ export function RelatedArtifacts({ artifactId, canManagePolicy }: RelatedArtifac
                 <span className="mr-2 inline-block rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-600">
                   {relationshipLabel(relationship)}
                 </span>
+                {relationship.source === "ai" && (
+                  <span
+                    title={relationship.confidence !== null ? `AI-suggested (confidence ${Math.round(relationship.confidence * 100)}%)` : undefined}
+                    className="mr-2 inline-block rounded bg-indigo-100 px-1 py-px text-[10px] font-medium text-indigo-700"
+                  >
+                    AI
+                  </span>
+                )}
                 {relationship.otherArtifact ? (
                   <Link
                     to={`/artifacts/${relationship.otherArtifact.id}`}

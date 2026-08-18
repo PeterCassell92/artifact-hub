@@ -39,7 +39,9 @@ export const RelationType = z.enum([
 ]);
 export type RelationType = z.infer<typeof RelationType>;
 
-export const AccessRoute = z.enum(["ui", "share_link", "mcp"]);
+/** `system` = a background job (e.g. artifact enrichment) reading content on the owner's behalf,
+ * not a human or agent request — see docs/architecture/01 decision #46. */
+export const AccessRoute = z.enum(["ui", "share_link", "mcp", "system"]);
 export type AccessRoute = z.infer<typeof AccessRoute>;
 
 export const AccessAction = z.enum(["view", "download"]);
@@ -47,3 +49,11 @@ export type AccessAction = z.infer<typeof AccessAction>;
 
 export const AccessDecision = z.enum(["allowed", "denied"]);
 export type AccessDecision = z.infer<typeof AccessDecision>;
+
+export const EnrichmentStatus = z.enum(["pending", "running", "completed", "failed", "skipped"]);
+export type EnrichmentStatus = z.infer<typeof EnrichmentStatus>;
+
+/** Provenance of a tag or relationship — `ai` rows always carry a `confidence` score, `human`
+ * rows never do. */
+export const EnrichmentSource = z.enum(["human", "ai"]);
+export type EnrichmentSource = z.infer<typeof EnrichmentSource>;

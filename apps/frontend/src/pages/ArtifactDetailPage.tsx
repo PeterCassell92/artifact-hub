@@ -1,11 +1,13 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useGetArtifactQuery } from "../store/api";
 import { ArtifactViewer } from "../components/ArtifactViewer";
+import { ArtifactTags } from "../components/ArtifactTags";
 import { CommentForm } from "../components/CommentForm";
 import { CommentList } from "../components/CommentList";
 import { AccessHistoryPanel } from "../components/AccessHistoryPanel";
 import { AccessPolicyEditor } from "../components/AccessPolicyEditor";
 import { AccessPolicySummary } from "../components/AccessPolicySummary";
+import { EnrichmentPanel } from "../components/EnrichmentPanel";
 import { RelatedArtifacts } from "../components/RelatedArtifacts";
 import { ShareLinkPanel } from "../components/ShareLinkPanel";
 import { fileTypeLabel, formatBytes, formatPublishedAtWithTime, kindLabel } from "../lib/formatters";
@@ -107,6 +109,21 @@ export function ArtifactDetailPage() {
         </div>
       </dl>
 
+      {(artifact.tags.length > 0 || artifact.aiSummary) && (
+        <div className="flex flex-col gap-2 rounded-md border border-neutral-200 bg-white p-4 text-sm">
+          {artifact.aiSummary && (
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">AI Summary</h2>
+              <p className="mt-1 text-neutral-800">{artifact.aiSummary}</p>
+              {artifact.aiTopics.length > 0 && (
+                <p className="mt-1 text-xs text-neutral-500">Topics: {artifact.aiTopics.join(", ")}</p>
+              )}
+            </div>
+          )}
+          {artifact.tags.length > 0 && <ArtifactTags tags={artifact.tags} />}
+        </div>
+      )}
+
       {/* Reaching this point at all means the server's canView already passed (403s render their
           own early-return state above) — so any viewer here, owner or not, is safe to hand out a
           share link (03 §5: it's a pure locator, never more permissive than their own access). */}
@@ -135,6 +152,15 @@ export function ArtifactDetailPage() {
           <CommentList artifactId={artifact.id} />
         </div>
       </div>
+
+      {artifact.canManagePolicy && (
+        <div>
+          <h2 className="text-sm font-semibold text-neutral-700">AI Enrichment</h2>
+          <div className="mt-3">
+            <EnrichmentPanel artifactId={artifact.id} />
+          </div>
+        </div>
+      )}
 
       {artifact.canViewAccessEvents && (
         <div>
