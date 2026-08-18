@@ -74,6 +74,7 @@ I chose to ultimately focus my time on getting the authentication, access contro
 - **IdP**: Auth0 - one tenant per environment, issuing separate token claims for the SPA/API session vs MCP agent access, which is what lets me scope agents more tightly than logged-in humans.
 - **Email**: Resend, used for magic-link sign-in and invitations (there are no passwords anywhere in the system).
 - **Shared contract**: `packages/contracts` is a shared zod schema package imported by both the frontend and backend, so the API/MCP contract is type-checked in one place rather than duplicated.
+- **AI enrichment**: AWS Bedrock (Claude Sonnet), called from a background worker only - a deliberate, scoped exception to an otherwise LLM-free backend (see "Where and why I used LLM capabilities" below). Rides the same transactional-outbox worker already used for email, so it needed no new job infrastructure.
 
 
 ## How the MCP Integration Works
@@ -110,11 +111,15 @@ The mechanism I was most careful about is how file bytes move, because a tool re
 Net effect: whichever direction the bytes are moving, the agent's own request/response stays small, and the actual heavy lifting happens directly against object storage.
 
 ## Where and why I used LLM capabilities
-In this project there are no direct LLM calls however I have created prompts (skills) for mcp consuming agents to call summarise comments.
 
-With the latest mcp tools, it is now possible to make inferences from artifact relationships. The objective of this is to surface additional data insights from the artifacts and their metadata that humans could easily miss.
+The system has **automatic artifact enrichment**
+After every publish (from either the SPA or `publish_artifact`), a background job calls Claude Sonnet via AWS Bedrock to generate a summary, a topic list, proposed tags, and proposed relationships to the owner's other artifacts. It uses the same transactional-outbox worker already used for email delivery, so it needed no new job infrastructure - just one more event type on an existing reliable queue.
 
-If I were to direct LLM capabilities to this project, it would be to build weekly reports to send to different teams about their artifacts.
+Extra care has gone into designing a system that can summarise conversations as part of this metadata enrichment. At present this only analyses .jsonl files as a limitation, but since I wanted to share .jsonl files with this system then this became the priority. 
+
+.jsonl claude log files are deterministically stripped down into metadata + transcript then that transcript is analysed by the llm and added as a conversationSummary metadata field on the artifact.
+
+If I were to extend LLM use further, it would be toward corpus-wide inference rather than per-artifact - weekly digest reports per team, or trend/most-connected-artifact surfacing across the whole collection - both of which are flagged as deliberately deferred in the architecture docs rather than built now.
 
 ## Deployment approach
 After at first having specified an AWS architecture, I switched gear to a simpler, easier-to-deploy-to architecture with Netlify for the frontend and Fly.io for the backend.
