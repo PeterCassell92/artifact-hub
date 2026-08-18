@@ -27,6 +27,7 @@ export const sendNewArtifactAccessEmail: OutboxHandler = async (payload) => {
 
   const email = buildNewArtifactAccessEmail({
     recipientName: (payload.recipientName as string | null) ?? null,
+    sharingUser: artifact.owner.name ?? artifact.owner.email,
     artifact: {
       id: artifact.id,
       title: artifact.title,

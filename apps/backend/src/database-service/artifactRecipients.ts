@@ -55,12 +55,18 @@ function toOutboxEvent(
   };
 }
 
-/** Publish-time (B) — no "before" policy exists yet, so every resolved recipient is notified. */
+/**
+ * Publish-time (B) — no "before" policy exists yet, so every resolved recipient is notified.
+ * Only "specific_users" audiences are notified by email; `public_authenticated` and `user_groups`
+ * can resolve to large populations and would otherwise spam everyone on every publish.
+ */
 export async function buildPublishNotificationEvents(
   artifactId: string,
   ownerId: string,
   policy: PolicyForRecipients,
 ): Promise<EnqueueOutboxEventInput[]> {
+  if (policy.audienceType !== "specific_users") return [];
+
   const recipients = excludeOwner(await resolvePolicyRecipients(policy), ownerId);
   logger.info(
     { artifactId, outboxType: "artifact.new_access", recipientCount: recipients.length },
@@ -74,13 +80,16 @@ export async function buildPublishNotificationEvents(
 /**
  * Save-Policy-time (B) — only users newly granted access (present in `afterPolicy`'s resolved
  * recipients, absent from `beforePolicy`'s) are notified; people who already had access aren't
- * re-notified on every edit.
+ * re-notified on every edit. Only notifies when the resulting audience is "specific_users" — see
+ * `buildPublishNotificationEvents` for why broad audiences are excluded.
  */
 export async function buildNewAccessOutboxEvents(
   artifact: { id: string; ownerId: string },
   beforePolicy: PolicyForRecipients,
   afterPolicy: PolicyForRecipients,
 ): Promise<EnqueueOutboxEventInput[]> {
+  if (afterPolicy.audienceType !== "specific_users") return [];
+
   const [beforeRecipients, afterRecipients] = await Promise.all([
     resolvePolicyRecipients(beforePolicy),
     resolvePolicyRecipients(afterPolicy),
@@ -115,11 +124,15 @@ export async function buildNewAccessOutboxEvents(
 /**
  * Explicit "Revoke all access" (C) — one event per recipient under the still-intact policy at the
  * moment of revoke (`revokeArtifactAccess` only flips `revoked`, leaving the allow-lists as-is).
+ * Only notifies when the policy is "specific_users" — see `buildPublishNotificationEvents` for
+ * why broad audiences (public_authenticated, user_groups) are excluded from email notification.
  */
 export async function buildAccessRevokedOutboxEvents(
   artifact: { id: string; ownerId: string },
   currentPolicy: PolicyForRecipients,
 ): Promise<EnqueueOutboxEventInput[]> {
+  if (currentPolicy.audienceType !== "specific_users") return [];
+
   const recipients = excludeOwner(await resolvePolicyRecipients(currentPolicy), artifact.ownerId);
   logger.info(
     { artifactId: artifact.id, outboxType: "artifact.access_revoked", recipientCount: recipients.length },

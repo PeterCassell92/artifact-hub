@@ -35,7 +35,7 @@ describe("sendNewArtifactAccessEmail", () => {
     });
   }
 
-  it("sends an email with the artifact's title, kind, filetype, and size", async () => {
+  it("sends an email with the sharing user's name in the subject, and the artifact's title, kind, filetype, and size in the body", async () => {
     const artifact = await makeArtifact();
     const recipientEmail = `recipient-${Math.random()}@test.local`;
     const since = Date.now();
@@ -48,7 +48,8 @@ describe("sendNewArtifactAccessEmail", () => {
     });
 
     const message = await findCaughtMessageTo(recipientEmail, since);
-    expect(message.subject).toContain(artifact.title);
+    expect(message.subject).toBe("Test Owner shared an Artifact with you");
+    expect(message.html).toContain(artifact.title);
     expect(message.html).toContain("Report");
     expect(message.html).toContain("PDF");
     expect(message.html).toContain("2.0 KB");

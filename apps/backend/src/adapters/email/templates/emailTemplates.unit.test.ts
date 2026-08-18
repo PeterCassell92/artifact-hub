@@ -25,6 +25,7 @@ describe("buildNewArtifactAccessEmail", () => {
   it("includes title, kind, filetype, size, and a link to the artifact", () => {
     const email = buildNewArtifactAccessEmail({
       recipientName: "Ada",
+      sharingUser: "Bob",
       artifact,
       appOrigin: "https://artifact-hub.test",
     });
@@ -34,9 +35,20 @@ describe("buildNewArtifactAccessEmail", () => {
     expect(email.html).toContain(`https://artifact-hub.test/artifacts/${artifact.id}`);
   });
 
+  it("subject names the sharing user, not the artifact", () => {
+    const email = buildNewArtifactAccessEmail({
+      recipientName: "Ada",
+      sharingUser: "Bob",
+      artifact,
+      appOrigin: "https://artifact-hub.test",
+    });
+    expect(email.subject).toBe("Bob shared an Artifact with you");
+  });
+
   it("HTML-escapes the artifact title", () => {
     const email = buildNewArtifactAccessEmail({
       recipientName: null,
+      sharingUser: "Bob",
       artifact,
       appOrigin: "https://artifact-hub.test",
     });
@@ -47,6 +59,7 @@ describe("buildNewArtifactAccessEmail", () => {
   it("falls back to a generic greeting when recipientName is null", () => {
     const email = buildNewArtifactAccessEmail({
       recipientName: null,
+      sharingUser: "Bob",
       artifact,
       appOrigin: "https://artifact-hub.test",
     });

@@ -107,6 +107,23 @@ describe("artifactRecipients", () => {
         payload: { artifactId: "artifact-1", recipientUserId: recipient.id },
       });
     });
+
+    it.each(["public_authenticated", "user_groups"] as const)(
+      "enqueues nothing for %s audiences, which can resolve to large populations",
+      async (audienceType) => {
+        const owner = await makeUser("active");
+        const group = await makeGroup();
+        await prisma.groupMembership.create({ data: { userId: owner.id, groupId: group.id } });
+
+        const events = await buildPublishNotificationEvents("artifact-1b", owner.id, {
+          audienceType,
+          allowedUserIds: [],
+          allowedGroupIds: [group.id],
+        });
+
+        expect(events).toEqual([]);
+      },
+    );
   });
 
   describe("buildNewAccessOutboxEvents", () => {
@@ -139,17 +156,20 @@ describe("artifactRecipients", () => {
       expect(events[0]!.payload).toMatchObject({ artifactId: "artifact-3", recipientUserId: newlyAdded.id });
     });
 
-    it("never includes the owner even under public_authenticated", async () => {
-      const owner = await makeUser("active");
+    it.each(["public_authenticated", "user_groups"] as const)(
+      "widening to %s enqueues nothing, since only specific_users audiences are emailed",
+      async (audienceType) => {
+        const owner = await makeUser("active");
 
-      const events = await buildNewAccessOutboxEvents(
-        { id: "artifact-4", ownerId: owner.id },
-        { audienceType: "specific_users", allowedUserIds: [], allowedGroupIds: [] },
-        { audienceType: "public_authenticated", allowedUserIds: [], allowedGroupIds: [] },
-      );
+        const events = await buildNewAccessOutboxEvents(
+          { id: "artifact-4", ownerId: owner.id },
+          { audienceType: "specific_users", allowedUserIds: [], allowedGroupIds: [] },
+          { audienceType, allowedUserIds: [], allowedGroupIds: [] },
+        );
 
-      expect(events.some((e) => e.payload.recipientUserId === owner.id)).toBe(false);
-    });
+        expect(events).toEqual([]);
+      },
+    );
   });
 
   describe("buildAccessRevokedOutboxEvents", () => {
@@ -168,5 +188,21 @@ describe("artifactRecipients", () => {
         payload: { artifactId: "artifact-5", recipientUserId: recipient.id },
       });
     });
+
+    it.each(["public_authenticated", "user_groups"] as const)(
+      "enqueues nothing for %s audiences, which can resolve to large populations",
+      async (audienceType) => {
+        const owner = await makeUser("active");
+        const group = await makeGroup();
+        await prisma.groupMembership.create({ data: { userId: owner.id, groupId: group.id } });
+
+        const events = await buildAccessRevokedOutboxEvents(
+          { id: "artifact-5b", ownerId: owner.id },
+          { audienceType, allowedUserIds: [], allowedGroupIds: [group.id] },
+        );
+
+        expect(events).toEqual([]);
+      },
+    );
   });
 });

@@ -6,6 +6,7 @@ import { filetypeLabel, formatBytes } from "./format";
 
 export interface BuildNewArtifactAccessEmailInput {
   recipientName: string | null;
+  sharingUser: string;
   artifact: {
     id: string;
     title: string;
@@ -19,10 +20,11 @@ export interface BuildNewArtifactAccessEmailInput {
 
 export function buildNewArtifactAccessEmail({
   recipientName,
+  sharingUser,
   artifact,
   appOrigin,
 }: BuildNewArtifactAccessEmailInput): BuiltEmail {
-  const heading = "A new artifact is accessible to you";
+  const heading = "An artifact has been shared with you";
   const greeting = recipientName ? `Hi ${escapeHtml(recipientName)},` : "Hi,";
   const icon = artifactKindIcon(artifact.kind);
   const filetype = filetypeLabel(artifact);
@@ -45,7 +47,7 @@ export function buildNewArtifactAccessEmail({
   `;
 
   return {
-    subject: `"${artifact.title}" is now shared with you`,
+    subject: `${sharingUser} shared an Artifact with you`,
     html: renderEmailHtml({ heading, bodyHtml, cta: { label: "View artifact", url } }),
     text: renderEmailText({
       heading,
