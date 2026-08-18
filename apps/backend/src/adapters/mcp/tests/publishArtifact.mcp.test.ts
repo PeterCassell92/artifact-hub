@@ -43,11 +43,37 @@ describe("Agents can publish a new artifact without ever sending its bytes throu
     expect(payload.bytesRef).toBe(payload.artifactId);
     expect(payload.uploadUrl).toMatch(/^http/);
     // Browser fallback for hosts whose model has no HTTP tool (decision #47) — id-only SPA link.
-    expect(new URL(payload.webUploadUrl).pathname).toBe(`/artifacts/${payload.artifactId}/complete-upload`);
+    const webUploadUrl = new URL(payload.webUploadUrl);
+    expect(webUploadUrl.pathname).toBe(`/artifacts/${payload.artifactId}/complete-upload`);
+    expect(webUploadUrl.hash).toBe("");
 
     const stored = await ctx.prisma.artifact.findUnique({ where: { id: payload.artifactId } });
     expect(stored).toMatchObject({ ownerId: user.id, title: "Test diagram", audienceType: "public_authenticated" });
     expect(Number(stored!.sizeBytes)).toBe(0);
+  });
+
+  it("echoes a supplied filePath into webUploadUrl's hash fragment without persisting it", async () => {
+    const { client } = await ctx.connectAsUser(`owner-${randomUUID()}@test.local`);
+
+    const result = await client.callTool({
+      name: "publish_artifact",
+      arguments: {
+        title: "Report",
+        fileName: "q3 report.pdf",
+        contentType: "application/pdf",
+        filePath: "/home/alice/reports/q3 report.pdf",
+        audience: { type: "public_authenticated" },
+        expiry: "7d",
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const payload = textPayload(result) as { artifactId: string; webUploadUrl: string };
+    const webUploadUrl = new URL(payload.webUploadUrl);
+    expect(webUploadUrl.pathname).toBe(`/artifacts/${payload.artifactId}/complete-upload`);
+    // Hash fragment, not a query param — the local path must never reach a server log.
+    expect(webUploadUrl.search).toBe("");
+    expect(webUploadUrl.hash).toBe(`#filePath=${encodeURIComponent("/home/alice/reports/q3 report.pdf")}`);
   });
 
   it("refuses a call that supplies neither a full start payload nor bytesRef", async () => {

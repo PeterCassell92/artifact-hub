@@ -49,11 +49,11 @@ jest.unstable_mockModule("../store/api", () => ({
 
 const { CompleteUploadPage } = await import("./CompleteUploadPage");
 
-function renderPage() {
+function renderPage(route = "/artifacts/a1/complete-upload") {
   return render(
     <Provider store={makeStore()}>
       <NotificationRegion />
-      <MemoryRouter initialEntries={["/artifacts/a1/complete-upload"]}>
+      <MemoryRouter initialEntries={[route]}>
         <Routes>
           <Route path="/artifacts/:id/complete-upload" element={<CompleteUploadPage />} />
           <Route path="/artifacts/:id" element={<div>artifact detail page</div>} />
@@ -183,5 +183,51 @@ describe("CompleteUploadPage", () => {
     renderPage();
 
     expect(screen.getByRole("alert")).toHaveTextContent(/artifact not found/i);
+  });
+
+  describe("agent-supplied filePath in the hash fragment", () => {
+    const path = "/home/alice/reports/q3 report.pdf";
+    const routeWithPath = `/artifacts/a1/complete-upload#filePath=${encodeURIComponent(path)}`;
+
+    it("shows the path with a copy button, and copying puts it on the clipboard with an in-DOM confirmation", async () => {
+      const user = userEvent.setup();
+      renderPage(routeWithPath);
+
+      expect(screen.getByText(path)).toBeInTheDocument();
+      expect(screen.getByText(/paste it into the file picker/i)).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /copy path/i }));
+
+      expect(await window.navigator.clipboard.readText()).toBe(path);
+      expect(screen.getByRole("status")).toHaveTextContent(/copied/i);
+    });
+
+    it("shows no path block when the link carries no fragment", () => {
+      renderPage();
+
+      expect(screen.queryByRole("button", { name: /copy path/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/paste it into the file picker/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("wrong-file check", () => {
+    it("warns when the picked file's name differs from the published fileName but still allows uploading", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await selectFile(user, new File(["hello"], "totally-different.txt", { type: "text/plain" }));
+
+      expect(screen.getByRole("alert")).toHaveTextContent(/published as "report\.pdf"/i);
+      expect(screen.getByRole("button", { name: /upload and publish/i })).toBeEnabled();
+    });
+
+    it("shows no warning when the picked file matches the published fileName", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await selectFile(user, new File(["hello"], "report.pdf", { type: "application/pdf" }));
+
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
   });
 });

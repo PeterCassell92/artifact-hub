@@ -36,6 +36,10 @@ export const PublishArtifactInput = z.object({
   sourceTool: z.string().optional(),
   language: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Absolute local path of the file on the publisher's machine. Never stored — only echoed
+   * into webUploadUrl's hash fragment so the completion page can show the user a copyable
+   * path for the OS file picker (a browser can't pre-select a file itself). */
+  filePath: z.string().min(1).optional(),
   audience: McpAudienceInput.optional(),
   expiry: ExpiryOption.optional(),
   /** Optional links to already-existing artifacts, created right after this one — see

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   useFinalizeArtifactMutation,
   useGetArtifactQuery,
@@ -24,11 +24,28 @@ export function CompleteUploadPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const location = useLocation();
   const { data: artifact, isLoading, error } = useGetArtifactQuery(id ?? "", { skip: !id });
   const [reissueUploadUrl] = useReissueUploadUrlMutation();
   const [finalizeArtifact] = useFinalizeArtifactMutation();
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
+  const [copied, setCopied] = useState(false);
+
+  // The agent's local path to the file, riding in the hash fragment so it never reaches any
+  // server log. A browser can't pre-select a file programmatically (security restriction), so
+  // the best we can do is hand the user a copyable path for the OS picker.
+  const filePath = new URLSearchParams(location.hash.slice(1)).get("filePath");
+
+  async function handleCopyPath() {
+    if (!filePath) return;
+    try {
+      await navigator.clipboard.writeText(filePath);
+      setCopied(true);
+    } catch {
+      dispatch(notify("error", "Couldn't copy to the clipboard — select the path and copy it manually"));
+    }
+  }
 
   if (isLoading) {
     return (
@@ -123,6 +140,33 @@ export function CompleteUploadPage() {
         </p>
       </div>
 
+      {filePath && (
+        <div className="flex flex-col gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+          <p className="text-sm text-neutral-600">The file is at this path on your machine:</p>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 break-all rounded bg-white px-2 py-1 font-mono text-xs text-neutral-800 ring-1 ring-neutral-200">
+              {filePath}
+            </code>
+            <button
+              type="button"
+              onClick={() => void handleCopyPath()}
+              className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+            >
+              Copy path
+            </button>
+            {copied && (
+              <span role="status" className="text-xs text-neutral-500">
+                Copied
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-neutral-500">
+            Paste it into the file picker to jump straight to the file (Ctrl+L on Linux,
+            Cmd+Shift+G on macOS, or the file name box on Windows).
+          </p>
+        </div>
+      )}
+
       <input
         type="file"
         aria-label="Choose the file to upload"
@@ -132,6 +176,12 @@ export function CompleteUploadPage() {
       {file && (
         <p className="text-sm text-neutral-500">
           {file.name} · {formatBytes(file.size)}
+        </p>
+      )}
+      {file && file.name !== artifact.fileName && (
+        <p role="alert" className="text-sm text-amber-700">
+          You picked "{file.name}" but this artifact was published as "{artifact.fileName}" — make
+          sure it's the right file before uploading.
         </p>
       )}
 

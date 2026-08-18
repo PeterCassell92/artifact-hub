@@ -205,6 +205,9 @@ form feedback. This keeps every notification a queryable DOM node with no timing
   layered** (in-memory + HTTP).
 - Frontend: **React component** unit tests (`*.test.tsx`, React Testing Library + jsdom).
 - Manual MCP checks: **MCP Inspector** and **Claude Desktop** (verify base64/mimeType/magic bytes).
+  **Claude Desktop cannot test against local servers** — its connectors require an **https** URL,
+  so `http://localhost` is rejected. Test Claude Desktop against a deployed (Fly) environment;
+  use MCP Inspector for local-stack checks.
 - CI runs `yarn lint`, `yarn typecheck`, `yarn test` on every PR.
 
 ## Conventions

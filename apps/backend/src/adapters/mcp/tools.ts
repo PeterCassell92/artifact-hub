@@ -70,7 +70,7 @@ const PUBLISH_ARTIFACT_DESCRIPTION = `Publishes a new artifact from the calling 
 
 Do NOT use this to change an existing artifact's audience or expiry — use set_access_policy for that. publish_artifact never edits an artifact that already exists (no edit/delete in v1).
 
-Two calls, one tool — file bytes never pass through this tool call. Call it WITHOUT bytesRef to start: supply title, fileName, contentType, audience, and expiry (plus optional description/kind/tags/sourceTool/language/metadata). The result includes uploadUrl (a short-lived presigned PUT URL, expires in a few minutes) and webUploadUrl (a web-app link that finishes the same upload in the user's browser). Pick ONE based on your own tool availability. If you can make HTTP requests yourself (e.g. a Bash/curl tool), PUT the file's bytes to uploadUrl right away, outside MCP (e.g. curl -X PUT --data-binary @file "$uploadUrl"), then call publish_artifact again with ONLY bytesRef (the value returned as bytesRef the first time) and, optionally, checksumSha256, to finish — this verifies the upload actually landed before the artifact is ready. If you have NO way to make an HTTP request (e.g. Claude Desktop), do not attempt the PUT and do not call this tool again — instead give the user webUploadUrl to open in their browser; that page has them pick the file and it uploads and finishes the publish itself, no further tool call needed. Until one of those completion paths runs, the artifact is an owner-only draft: its audience can't see it and nobody is notified.
+Two calls, one tool — file bytes never pass through this tool call. Call it WITHOUT bytesRef to start: supply title, fileName, contentType, audience, and expiry (plus optional description/kind/tags/sourceTool/language/metadata/filePath). The result includes uploadUrl (a short-lived presigned PUT URL, expires in a few minutes) and webUploadUrl (a web-app link that finishes the same upload in the user's browser). Pick ONE based on your own tool availability. If you can make HTTP requests yourself (e.g. a Bash/curl tool), PUT the file's bytes to uploadUrl right away, outside MCP (e.g. curl -X PUT --data-binary @file "$uploadUrl"), then call publish_artifact again with ONLY bytesRef (the value returned as bytesRef the first time) and, optionally, checksumSha256, to finish — this verifies the upload actually landed before the artifact is ready. If you have NO way to make an HTTP request (e.g. Claude Desktop), do not attempt the PUT and do not call this tool again — instead give the user webUploadUrl to open in their browser; that page has them pick the file and it uploads and finishes the publish itself, no further tool call needed. When you know the file's absolute path on the user's machine, also pass filePath on the start call: the browser can't pre-select the file (a security restriction), but the completion page will show the path with a copy button so the user can paste it straight into their file picker instead of hunting for it. filePath is never stored — it only rides in webUploadUrl's hash fragment. Until one of those completion paths runs, the artifact is an owner-only draft: its audience can't see it and nobody is notified.
 
 audience.type is one of public_authenticated (any signed-in user) | specific_users (requires audience.userEmails) | user_groups (requires audience.groupNames). expiry is one of 24h | 7d | 30d | never. groupNames must match a group's exact name — the caller does NOT need to belong to a group to publish to it. If you don't already have the exact name, call list_groups to see every group in the organization (or get_user_details for just the caller's own groups) rather than guessing.
 
@@ -78,7 +78,7 @@ Optionally, on the start call, pass relationships — an array of { toId, type, 
 
 Result is metadata-only JSON, never file bytes: on the start call, { artifactId, resourceUri, uploadUrl, webUploadUrl, bytesRef, relationshipResults? }; on the finish call, { artifactId, resourceUri }. Once published, read the file back via the artifact://<id> resource, never from this tool.
 
-Example (start): publish_artifact({ title: "Q3 architecture diagram", fileName: "q3-arch.mmd", contentType: "text/x-mermaid", audience: { type: "user_groups", groupNames: ["engineering"] }, expiry: "30d", relationships: [{ toId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "derived_from", note: "rendered PNG of this diagram" }] }). Example (finish): publish_artifact({ bytesRef: "<artifactId from the start call>" }).`;
+Example (start): publish_artifact({ title: "Q3 architecture diagram", fileName: "q3-arch.mmd", contentType: "text/x-mermaid", filePath: "/home/alice/diagrams/q3-arch.mmd", audience: { type: "user_groups", groupNames: ["engineering"] }, expiry: "30d", relationships: [{ toId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "derived_from", note: "rendered PNG of this diagram" }] }). Example (finish): publish_artifact({ bytesRef: "<artifactId from the start call>" }).`;
 
 const LIST_ARTIFACTS_DESCRIPTION = `Lists the artifacts the calling user has published — "My Artifacts". Use when the user asks what they've published, uploaded, or shared, or wants to manage/revoke their own artifacts.
 
@@ -346,7 +346,11 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       // Browser fallback for hosts whose model has no HTTP tool (decision #47) — an id-only
       // locator, no secret: the completion page re-mints its own presigned URL behind session
       // auth + an ownership check, so this link is safe to sit in a chat transcript.
-      const webUploadUrl = new URL(`/artifacts/${artifact.id}/complete-upload`, getEnv().APP_ORIGIN).toString();
+      // filePath rides in the hash fragment, which never reaches Netlify/backend logs — the
+      // completion page shows it as a copyable path for the OS file picker.
+      const webUploadUrlObj = new URL(`/artifacts/${artifact.id}/complete-upload`, getEnv().APP_ORIGIN);
+      if (args.filePath) webUploadUrlObj.hash = `filePath=${encodeURIComponent(args.filePath)}`;
+      const webUploadUrl = webUploadUrlObj.toString();
 
       return toolJson(
         {
