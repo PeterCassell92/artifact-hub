@@ -51,6 +51,10 @@ const artifact: ArtifactDetail = {
   tags: [],
   aiSummary: null,
   aiTopics: [],
+  conversationSummary: null,
+  conversationMessageCount: null,
+  conversationFirstMessageAt: null,
+  conversationFinalMessageAt: null,
 };
 
 function renderWithStore() {

@@ -49,14 +49,17 @@ const EnvSchema = z.object({
   AWS_ENDPOINT_URL_S3: z.string().url(),
   AWS_REGION: z.string().min(1),
 
-  // AWS Bedrock credentials for artifact enrichment (docs/architecture/01 decision #46) — a
-  // SEPARATE credential pair from BUCKET_NAME/AWS_ENDPOINT_URL_S3/AWS_REGION above, which point
-  // at Tigris's S3-compatible endpoint, not real AWS/Bedrock. Optional so the backend boots
-  // without them (the enrichment worker handler fails/skips loudly if invoked unconfigured, same
-  // pattern as AUTH0_MGMT_CLIENT_ID/SECRET). Model id and enrichment thresholds are NOT here —
-  // see config.ts for those (git-committed tunables, not secrets). Prod: `fly secrets`.
-  BEDROCK_AWS_ACCESS_KEY_ID: z.string().optional(),
-  BEDROCK_AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  // AWS Bedrock auth for artifact enrichment (docs/architecture/01 decision #46) — a Bedrock API
+  // key (bearer token), NOT an IAM access key/secret pair, and a SEPARATE credential from
+  // BUCKET_NAME/AWS_ENDPOINT_URL_S3/AWS_REGION above, which point at Tigris's S3-compatible
+  // endpoint, not real AWS/Bedrock. Optional so the backend boots without it (the enrichment
+  // worker handler fails/skips loudly if invoked unconfigured, same pattern as
+  // AUTH0_MGMT_CLIENT_ID/SECRET). Model id and enrichment thresholds are NOT here — see config.ts
+  // for those (git-committed tunables, not secrets). Prod: `fly secrets`.
+  //
+  // Bedrock API keys EXPIRE (short- or long-term, never indefinite, unlike a typical IAM access
+  // key) — this needs periodic rotation via `fly secrets set`, not a one-time setup.
+  BEDROCK_API_KEY: z.string().optional(),
   BEDROCK_AWS_REGION: z.string().optional(),
 
   // Dev/test-only auth shortcut (docs/development/bruno-mcp-token.md, 09 §3-4). Never used in

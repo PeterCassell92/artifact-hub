@@ -23,6 +23,10 @@ const baseArtifact: ArtifactDetail = {
   tags: [],
   aiSummary: null,
   aiTopics: [],
+  conversationSummary: null,
+  conversationMessageCount: null,
+  conversationFirstMessageAt: null,
+  conversationFinalMessageAt: null,
 };
 
 describe("AccessPolicySummary", () => {

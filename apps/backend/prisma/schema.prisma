@@ -171,8 +171,18 @@ model Artifact {
 
   // AI-generated enrichment output (see ArtifactEnrichment for the job/run history that produced
   // these) — first-class columns rather than buried in `metadata` so they're easy to display/filter.
-  aiSummary String?
-  aiTopics  String[] @default([])
+  aiSummary                  String?
+  aiTopics                   String[]  @default([])
+  // Set only for artifacts recognized as a conversation transcript (currently: Claude Code JSONL
+  // session logs) — a purpose-built summary from a separate agent, distinct from aiSummary's
+  // generic "what is this artifact" framing. Null for every other artifact.
+  conversationSummary        String?
+  // Deterministic facts extracted by lib/claudeCodeTranscript.ts — never LLM-derived — giving a
+  // rough sense of when the conversation took place and how long it was, alongside the LLM-written
+  // conversationSummary prose above.
+  conversationMessageCount   Int?
+  conversationFirstMessageAt DateTime?
+  conversationFinalMessageAt DateTime?
 
   // access policy (one per artifact — see docs/architecture/03)
   audienceType      AudienceType @default(specific_users)
@@ -197,8 +207,8 @@ model Artifact {
   tags          ArtifactTag[]
   comments      Comment[]
   shareLinks    ShareLink[]
-  relFrom       ArtifactRelationship[]  @relation("from")
-  relTo         ArtifactRelationship[]  @relation("to")
+  relFrom       ArtifactRelationship[] @relation("from")
+  relTo         ArtifactRelationship[] @relation("to")
   accessEvents  AccessEvent[]
   enrichments   ArtifactEnrichment[]
 
@@ -312,19 +322,27 @@ model ArtifactRelationship {
 // `get_enrichment_status` MCP tool; the actual side effects (tags, relationships, summary) land
 // on Artifact/ArtifactTag/ArtifactRelationship, this is the job's own audit trail.
 model ArtifactEnrichment {
-  id                    String           @id @default(uuid())
-  artifactId            String
-  status                EnrichmentStatus @default(pending)
-  trigger               String // "publish" | "rerun"
-  requestedById         String
-  startedAt             DateTime?
-  completedAt           DateTime?
-  error                 String?
-  summary               String?
-  topics                String[]         @default([])
-  tagsAdded             String[]         @default([])
-  relationshipsProposed Json             @default("[]") // [{ toId, type, confidence, accepted }]
-  createdAt             DateTime         @default(now())
+  id                         String           @id @default(uuid())
+  artifactId                 String
+  status                     EnrichmentStatus @default(pending)
+  trigger                    String // "publish" | "rerun"
+  requestedById              String
+  startedAt                  DateTime?
+  completedAt                DateTime?
+  error                      String?
+  summary                    String?
+  topics                     String[]         @default([])
+  tagsAdded                  String[]         @default([])
+  relationshipsProposed      Json             @default("[]") // [{ toId, type, confidence, accepted }]
+  // Best-effort — set only when this run detected a conversation transcript and the separate
+  // conversation-summary agent call succeeded; null otherwise (not a run failure either way).
+  conversationSummary        String?
+  // Deterministic (lib/claudeCodeTranscript.ts), set whenever this run detected a conversation —
+  // independent of whether the conversationSummary call above itself succeeded.
+  conversationMessageCount   Int?
+  conversationFirstMessageAt DateTime?
+  conversationFinalMessageAt DateTime?
+  createdAt                  DateTime         @default(now())
 
   artifact    Artifact @relation(fields: [artifactId], references: [id])
   requestedBy User     @relation(fields: [requestedById], references: [id])

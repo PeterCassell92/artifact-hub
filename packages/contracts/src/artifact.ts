@@ -131,6 +131,16 @@ export const ArtifactDetail = ArtifactSummary.extend({
    * these. */
   aiSummary: z.string().nullable(),
   aiTopics: z.array(z.string()),
+  /** Set only for artifacts recognized as a conversation transcript (e.g. a Claude Code JSONL
+   * session log) — a purpose-built summary from a separate agent, distinct from `aiSummary`'s
+   * generic framing. Null for every other artifact. */
+  conversationSummary: z.string().nullable(),
+  /** Deterministic facts extracted by the backend's transcript reducer — never LLM-derived — set
+   * whenever `conversationSummary` is, giving a rough sense of when the conversation took place
+   * and how long it was. */
+  conversationMessageCount: z.number().int().nonnegative().nullable(),
+  conversationFirstMessageAt: z.string().datetime().nullable(),
+  conversationFinalMessageAt: z.string().datetime().nullable(),
 });
 export type ArtifactDetail = z.infer<typeof ArtifactDetail>;
 

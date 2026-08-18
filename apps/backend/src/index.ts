@@ -32,8 +32,8 @@ if (env.NODE_ENV === "production" && (!env.SMTP_USER || !env.SMTP_PASS)) {
 // Same reasoning as the SMTP check above, for the enrichment job's Bedrock credentials
 // (docs/architecture/01 decision #46) — fail loudly at boot rather than silently after the first
 // "artifact.enrich" event exhausts its outbox retries.
-if (env.NODE_ENV === "production" && (!env.BEDROCK_AWS_ACCESS_KEY_ID || !env.BEDROCK_AWS_SECRET_ACCESS_KEY)) {
-  logger.warn("BEDROCK_AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY are not set in production — artifact enrichment will fail");
+if (env.NODE_ENV === "production" && !env.BEDROCK_API_KEY) {
+  logger.warn("BEDROCK_API_KEY is not set in production — artifact enrichment will fail");
 }
 
 // Transactional outbox drain loop (docs/architecture/02 §6) — rides the same always-on machine

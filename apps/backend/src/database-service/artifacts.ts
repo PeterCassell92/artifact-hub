@@ -19,6 +19,7 @@ import { deleteObject, getPresignedUploadUrl, headObject } from "../storage/s3";
 import { enqueueOutboxEvent, type EnqueueOutboxEventInput } from "./outbox";
 import { buildPublishNotificationEvents } from "./artifactRecipients";
 import { enqueueEnrichment } from "./enrichment";
+import { inferContentType } from "../lib/contentType";
 
 export const withPolicyJoins = Prisma.validator<Prisma.ArtifactDefaultArgs>()({
   include: {
@@ -85,6 +86,10 @@ export function toDetail(
     tags: artifact.tags.map((t) => ({ name: t.tag.name, source: t.source, confidence: t.confidence })),
     aiSummary: artifact.aiSummary,
     aiTopics: artifact.aiTopics,
+    conversationSummary: artifact.conversationSummary,
+    conversationMessageCount: artifact.conversationMessageCount,
+    conversationFirstMessageAt: artifact.conversationFirstMessageAt?.toISOString() ?? null,
+    conversationFinalMessageAt: artifact.conversationFinalMessageAt?.toISOString() ?? null,
   };
 }
 
@@ -423,14 +428,36 @@ export async function attachAiTags(
   }
 }
 
-/** Writes the enrichment job's summary/topics onto the artifact itself. */
+/** Writes the enrichment job's summary/topics (and, when this run detected one, a
+ * conversationSummary plus the deterministic messageCount/first/finalMessageAt facts) onto the
+ * artifact itself. */
 export async function setArtifactAiMetadata(
   artifactId: string,
-  input: { summary: string; topics: string[] },
+  input: {
+    summary: string;
+    topics: string[];
+    conversationSummary?: string;
+    conversationMessageCount?: number;
+    conversationFirstMessageAt?: Date;
+    conversationFinalMessageAt?: Date;
+  },
 ): Promise<void> {
   await prisma.artifact.update({
     where: { id: artifactId },
-    data: { aiSummary: input.summary, aiTopics: input.topics },
+    data: {
+      aiSummary: input.summary,
+      aiTopics: input.topics,
+      ...(input.conversationSummary !== undefined ? { conversationSummary: input.conversationSummary } : {}),
+      ...(input.conversationMessageCount !== undefined
+        ? { conversationMessageCount: input.conversationMessageCount }
+        : {}),
+      ...(input.conversationFirstMessageAt !== undefined
+        ? { conversationFirstMessageAt: input.conversationFirstMessageAt }
+        : {}),
+      ...(input.conversationFinalMessageAt !== undefined
+        ? { conversationFinalMessageAt: input.conversationFinalMessageAt }
+        : {}),
+    },
   });
 }
 
@@ -471,6 +498,12 @@ export async function createArtifactPending(
 ): Promise<CreateArtifactPendingResult> {
   const id = randomUUID();
   const storageKey = `artifacts/${id}/${sanitizeKeySegment(input.fileName)}`;
+  // Corrects an uninformative declared content type (e.g. `application/octet-stream`, what both
+  // the SPA's `file.type` fallback and an MCP client's best-effort guess produce for extensions
+  // like `.jsonl` that browsers/agents don't recognize) using the file extension — the single
+  // point both publish paths converge on, so this fixes both at once. Used for the stored row AND
+  // the presigned upload below, so the object in storage carries the corrected type too.
+  const contentType = inferContentType(input.fileName, input.contentType);
 
   const notificationEvents = await buildPublishNotificationEvents(id, ownerId, {
     audienceType: input.audienceType,
@@ -486,7 +519,7 @@ export async function createArtifactPending(
         title: input.title,
         description: input.description,
         fileName: input.fileName,
-        contentType: input.contentType,
+        contentType,
         storageKey,
         sizeBytes: BigInt(0),
         kind: input.kind ?? "other",
@@ -509,7 +542,7 @@ export async function createArtifactPending(
     await attachTags(id, input.tags);
   }
 
-  const uploadUrl = await getPresignedUploadUrl(storageKey, { contentType: input.contentType });
+  const uploadUrl = await getPresignedUploadUrl(storageKey, { contentType });
   const artifact = await findArtifactForDetail(id);
   return { artifact: artifact!, uploadUrl };
 }

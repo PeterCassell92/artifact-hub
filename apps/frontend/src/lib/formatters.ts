@@ -12,6 +12,17 @@ export function formatPublishedAt(iso: string): string {
   return format(new Date(iso), "MMM d, yyyy");
 }
 
+/** Splits an LLM-written summary (e.g. `conversationSummary`) into paragraphs on blank lines —
+ * the conversation-summary agent is prompted to separate paragraphs with `\n\n`, but a plain
+ * `<p>{text}</p>` collapses that whitespace, so callers render one `<p>` per returned paragraph
+ * instead. Falls back to the whole string as a single paragraph if there's no blank-line break. */
+export function splitIntoParagraphs(text: string): string[] {
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
 /** Date + time — used where the exact publish moment matters (the artifact detail page's
  * metadata panel), since expiry buckets are computed relative to it (arch/03 §1), not just the
  * day. List rows and comments stay date-only via `formatPublishedAt`. */

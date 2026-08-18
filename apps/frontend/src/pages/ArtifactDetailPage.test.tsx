@@ -25,6 +25,10 @@ const baseArtifact: ArtifactDetail = {
   tags: [],
   aiSummary: null,
   aiTopics: [],
+  conversationSummary: null,
+  conversationMessageCount: null,
+  conversationFirstMessageAt: null,
+  conversationFinalMessageAt: null,
 };
 
 let queryResult: { data?: ArtifactDetail; isLoading: boolean; error?: unknown };
@@ -130,5 +134,22 @@ describe("ArtifactDetailPage — access history panel by role", () => {
 
     expect(screen.queryByText("Access History")).not.toBeInTheDocument();
     expect(screen.queryByText("access history panel")).not.toBeInTheDocument();
+  });
+});
+
+describe("ArtifactDetailPage — conversation summary", () => {
+  it("shows the Conversation Summary section when the artifact has one", () => {
+    queryResult = { data: { ...baseArtifact, conversationSummary: "Discussed and fixed the DMARC record." }, isLoading: false };
+    renderPage();
+
+    expect(screen.getByText("Conversation Summary")).toBeInTheDocument();
+    expect(screen.getByText(/discussed and fixed the dmarc record/i)).toBeInTheDocument();
+  });
+
+  it("omits the Conversation Summary section when the artifact doesn't have one", () => {
+    queryResult = { data: baseArtifact, isLoading: false };
+    renderPage();
+
+    expect(screen.queryByText("Conversation Summary")).not.toBeInTheDocument();
   });
 });

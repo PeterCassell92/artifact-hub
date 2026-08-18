@@ -3,6 +3,7 @@ import { useGetArtifactQuery } from "../store/api";
 import { ArtifactViewer } from "../components/ArtifactViewer";
 import { ArtifactTags } from "../components/ArtifactTags";
 import { CommentForm } from "../components/CommentForm";
+import { ConversationSummary } from "../components/ConversationSummary";
 import { CommentList } from "../components/CommentList";
 import { AccessHistoryPanel } from "../components/AccessHistoryPanel";
 import { AccessPolicyEditor } from "../components/AccessPolicyEditor";
@@ -109,7 +110,7 @@ export function ArtifactDetailPage() {
         </div>
       </dl>
 
-      {(artifact.tags.length > 0 || artifact.aiSummary) && (
+      {(artifact.tags.length > 0 || artifact.aiSummary || artifact.conversationSummary) && (
         <div className="flex flex-col gap-2 rounded-md border border-neutral-200 bg-white p-4 text-sm">
           {artifact.aiSummary && (
             <div>
@@ -119,6 +120,14 @@ export function ArtifactDetailPage() {
                 <p className="mt-1 text-xs text-neutral-500">Topics: {artifact.aiTopics.join(", ")}</p>
               )}
             </div>
+          )}
+          {artifact.conversationSummary && (
+            <ConversationSummary
+              summary={artifact.conversationSummary}
+              messageCount={artifact.conversationMessageCount}
+              firstMessageDateTime={artifact.conversationFirstMessageAt}
+              finalMessageDateTime={artifact.conversationFinalMessageAt}
+            />
           )}
           {artifact.tags.length > 0 && <ArtifactTags tags={artifact.tags} />}
         </div>
