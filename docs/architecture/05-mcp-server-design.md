@@ -75,7 +75,7 @@ when to use / when NOT to use / disambiguation / example). Summary of the surfac
 
 | Tool | Purpose | Input (zod) | Result (metadata-only) |
 |------|---------|-------------|------------------------|
-| `publish_artifact` | Publish a new artifact + set its access policy | `{ title, description?, fileName, contentType, bytesRef, tags?, metadata?, audience:{type, userEmails?/groupNames?}, expiry: '24h'|'7d'|'30d'|'never', relationships?: [{toId, type, note?}] }` | `{ artifactId, resourceUri, relationshipResults? }` |
+| `publish_artifact` | Publish a new artifact + set its access policy | `{ title, description?, fileName, contentType, bytesRef, tags?, metadata?, audience:{type, userEmails?/groupNames?}, expiry: '24h'|'7d'|'30d'|'never', relationships?: [{toId, type, note?}] }` | start: `{ artifactId, resourceUri, uploadUrl, webUploadUrl, bytesRef, relationshipResults? }`; finish: `{ artifactId, resourceUri }` |
 | `list_artifacts` | List the caller's own artifacts ("My Artifacts") | `{ cursor?, limit? }` | table: id, title, filetype, createdAt, policy summary |
 | `list_shared_with_me` | List artifacts shared **to** the caller, optional time window | `{ sinceHours?, cursor?, limit? }` | **all** results returned; **first 10 rendered** as a markdown table (numeric id, filetype, publishingUserName, publicationDate) |
 | `get_artifact` | Fetch **small** content inline for reasoning | `{ id }` | small image → image block; small text/PDF → embedded resource; else → pointer to `artifact://<id>` |
@@ -113,6 +113,18 @@ Notes:
 - **Upload path** for `publish_artifact`: hand the client a **presigned PUT** so bytes go
   straight to Tigris out-of-band (`bytesRef` correlates the upload), *or* accept small content
   inline for tiny artifacts. Large bytes never transit a tool argument/result.
+  - **Two completion paths, the agent self-selects** (decision #47): a host with its own HTTP
+    capability (e.g. Claude Code's Bash/curl) PUTs to `uploadUrl` and finishes with the
+    `bytesRef` call, exactly as decision #44 designed. A host with no HTTP tool (e.g. Claude
+    Desktop — the model cannot perform a PUT at all) instead hands the user `webUploadUrl`, an
+    id-only SPA link (`/artifacts/{id}/complete-upload`, no token — session auth + ownership
+    gate it) where the user picks the file and the page uploads + finalizes itself; no second
+    tool call needed. The page re-mints its presigned URL via `POST /api/artifacts/:id/upload-url`
+    (`06` §2) since the original expires in ~5 minutes. Until either path completes, the
+    artifact is an **owner-only draft**: `canView` denies its audience (`pending`), it's absent
+    from `list_shared_with_me`, and publish notifications only go out at finalize. The finish
+    call is idempotent — replaying `bytesRef` after the browser page already finished is a
+    clean success, not an error.
 - **500MB size cap.** The presigned PUT has no size condition, so the finish call is the earliest
   point the backend actually knows how big the upload was: it `HeadObject`s the file, and if it's
   over `MAX_ARTIFACT_SIZE_BYTES` (`packages/contracts`), deletes the object and returns an error

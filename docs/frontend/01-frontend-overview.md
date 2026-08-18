@@ -28,6 +28,7 @@ magic-link sign-in and then redirected straight to that artifact's detail view.
 | `/artifacts` | **My Artifacts** — everything I own | member+ |
 | `/shared` | **Shared With Me** — artifacts others shared to me/my groups | member+ |
 | `/artifacts/:id` | **Artifact detail** — view/download, comments, share, policy | member+ (per `canView`) |
+| `/artifacts/:id/complete-upload` | **Upload completion** — finishes an MCP-started publish in the browser (arch `01` decision #47): file picker only, since metadata + policy were already set by `publish_artifact`; re-mints a fresh presigned PUT, uploads, finalizes. Reached via the tool's `webUploadUrl`; also resumes any abandoned pending upload | member+ (owner only — non-owners get an inline denial) |
 | `/s/:token` | Share-link redemption → resolves + redirects to `/artifacts/:id` | member+ after login |
 | `/admin` | Admin dashboard | admin |
 | `/admin/users` | Manage/invite users, promote/demote admins | admin |
@@ -35,6 +36,8 @@ magic-link sign-in and then redirected straight to that artifact's detail view.
 
 **No dedicated `/publish` route** — publishing from the UI happens via a modal on the Dashboard
 (`/`), not a separate route; agents can still publish via MCP `publish_artifact` (see README).
+`/artifacts/:id/complete-upload` doesn't change this: it only *finishes* a publish that
+`publish_artifact` already started, it can't start one.
 
 ## 3. Dashboard
 

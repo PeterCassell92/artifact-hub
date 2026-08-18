@@ -39,7 +39,8 @@ The REST API is the HTTP adapter that serves the SPA (including the admin area) 
 | Method & path | Purpose | Authz |
 |---------------|---------|-------|
 | `POST /api/artifacts` | Create artifact metadata + policy; returns a **presigned PUT** for the body | authenticated (becomes owner) |
-| `POST /api/artifacts/:id/finalize` | Confirm upload complete (size/mime/checksum recorded). `413 payload_too_large` (and deletes the object) if the upload exceeds `MAX_ARTIFACT_SIZE_BYTES` (500MB, `packages/contracts`) — see `05` | owner |
+| `POST /api/artifacts/:id/finalize` | Confirm upload complete (size/mime/checksum recorded); this is also when the artifact stops being an owner-only draft — publish notifications enqueue here, not at create (decision #47). Idempotent: re-finalizing an already-finalized artifact is a `200` no-op. `413 payload_too_large` (and deletes the object) if the upload exceeds `MAX_ARTIFACT_SIZE_BYTES` (500MB, `packages/contracts`) — see `05` | owner |
+| `POST /api/artifacts/:id/upload-url` | Re-mint a fresh presigned PUT for a **still-pending** artifact (`409 conflict` once finalized) — backs the `/artifacts/:id/complete-upload` browser completion page reached via the MCP tool's `webUploadUrl`, whose original presigned URL (~5 min) typically expires before a chat→browser round trip (decision #47) | owner |
 | `GET /api/artifacts/:id` | Artifact detail (metadata + policy + can-I-view). **Records an AccessEvent** (`route=ui`, `view`) | `canView` |
 | `GET /api/artifacts` | List artifacts visible to me (filters: `mine`, `sharedWithMe`, `sinceHours`, plus search/facets — see frontend/02) | per-item `canView` |
 | `GET /api/artifacts/:id/download` | Mint ~60s presigned URL and `302` redirect. **Records an AccessEvent** (`route=ui`, `download`) | `canView` |
@@ -139,6 +140,21 @@ SPA ─POST /api/artifacts/:id/finalize ───────▶ Backend (record
 Bytes go straight to Tigris; the backend never buffers large files. The MCP `publish_artifact`
 tool's start/finish calls use the same underlying `core` functions as this HTTP flow (not this
 HTTP flow itself).
+
+Resume/browser-completion branch (decision #47) — for when the original presigned URL expired
+(its TTL is ~5 minutes) or the MCP host had no HTTP capability to PUT with at all (e.g. Claude
+Desktop), the user opens `/artifacts/:id/complete-upload` in the SPA:
+
+```
+Browser ─POST /api/artifacts/:id/upload-url ─▶ Backend (owner + still-pending check)
+        ◀─ { uploadUrl (fresh presigned PUT) }
+Browser ─PUT bytes ──────────────────────────▶ Tigris
+Browser ─POST /api/artifacts/:id/finalize ───▶ Backend (same finalize as above)
+```
+
+Until finalize runs, the artifact is an owner-only draft: `canView` denies everyone else
+(`pending`), it's excluded from `sharedWithMe` listings, and no notification emails have gone
+out.
 
 ---
 

@@ -157,7 +157,13 @@ export function makeEnrichArtifact(
       const { items: ownedArtifacts, nextCursor } = await listOwnedArtifacts(artifact.ownerId, {
         limit: ENRICHMENT_MAX_CANDIDATE_ARTIFACTS + 1,
       });
-      const candidates = ownedArtifacts.filter((a) => a.id !== artifactId).slice(0, ENRICHMENT_MAX_CANDIDATE_ARTIFACTS);
+      // Excludes drafts (sizeBytes === 0, never finalized — the same signal behind
+      // ArtifactPolicy.pending, decision #47). listOwnedArtifacts intentionally still returns
+      // drafts for "My Artifacts", but a draft has no object in storage, so offering one as an
+      // enrichment candidate only ever produces an unreadable candidate.
+      const candidates = ownedArtifacts
+        .filter((a) => a.id !== artifactId && a.sizeBytes > BigInt(0))
+        .slice(0, ENRICHMENT_MAX_CANDIDATE_ARTIFACTS);
       if (nextCursor) {
         logger.warn(
           { artifactId, enrichmentId, considered: candidates.length, cap: ENRICHMENT_MAX_CANDIDATE_ARTIFACTS },
@@ -187,7 +193,20 @@ export function makeEnrichArtifact(
             const candidate = candidateById.get(candidateId);
             // Only ever resolves ids from the pre-authorized candidate set built above — never a
             // free-form lookup, so a hallucinated id just gets "no content available" back.
-            const content = candidate ? await readTextContentForEnrichment(candidate, artifact.ownerId) : null;
+            let content: string | null = null;
+            if (candidate) {
+              try {
+                content = await readTextContentForEnrichment(candidate, artifact.ownerId);
+              } catch (err) {
+                // A candidate's object can be unreadable (e.g. a stranded row whose upload never
+                // landed) without that invalidating the primary artifact's own enrichment — degrade
+                // to "no content available" for this one candidate rather than failing the run.
+                logger.warn(
+                  { err, artifactId, enrichmentId, candidateId },
+                  "artifact enrichment candidate content unreadable — skipping content for this candidate",
+                );
+              }
+            }
             contentCache.set(candidateId, content);
             return content;
           },

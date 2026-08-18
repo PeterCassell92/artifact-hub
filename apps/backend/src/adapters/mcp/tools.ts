@@ -70,13 +70,13 @@ const PUBLISH_ARTIFACT_DESCRIPTION = `Publishes a new artifact from the calling 
 
 Do NOT use this to change an existing artifact's audience or expiry — use set_access_policy for that. publish_artifact never edits an artifact that already exists (no edit/delete in v1).
 
-Two calls, one tool — file bytes never pass through this tool call. Call it WITHOUT bytesRef to start: supply title, fileName, contentType, audience, and expiry (plus optional description/kind/tags/sourceTool/language/metadata). The result includes uploadUrl, a short-lived presigned PUT URL. PUT the file's bytes to that URL yourself, outside MCP (e.g. curl -X PUT --data-binary @file "$uploadUrl"). Then call publish_artifact again with ONLY bytesRef (the value returned as bytesRef the first time) and, optionally, checksumSha256, to finish — this verifies the upload actually landed before the artifact is ready.
+Two calls, one tool — file bytes never pass through this tool call. Call it WITHOUT bytesRef to start: supply title, fileName, contentType, audience, and expiry (plus optional description/kind/tags/sourceTool/language/metadata). The result includes uploadUrl (a short-lived presigned PUT URL, expires in a few minutes) and webUploadUrl (a web-app link that finishes the same upload in the user's browser). Pick ONE based on your own tool availability. If you can make HTTP requests yourself (e.g. a Bash/curl tool), PUT the file's bytes to uploadUrl right away, outside MCP (e.g. curl -X PUT --data-binary @file "$uploadUrl"), then call publish_artifact again with ONLY bytesRef (the value returned as bytesRef the first time) and, optionally, checksumSha256, to finish — this verifies the upload actually landed before the artifact is ready. If you have NO way to make an HTTP request (e.g. Claude Desktop), do not attempt the PUT and do not call this tool again — instead give the user webUploadUrl to open in their browser; that page has them pick the file and it uploads and finishes the publish itself, no further tool call needed. Until one of those completion paths runs, the artifact is an owner-only draft: its audience can't see it and nobody is notified.
 
 audience.type is one of public_authenticated (any signed-in user) | specific_users (requires audience.userEmails) | user_groups (requires audience.groupNames). expiry is one of 24h | 7d | 30d | never. groupNames must match a group's exact name — the caller does NOT need to belong to a group to publish to it. If you don't already have the exact name, call list_groups to see every group in the organization (or get_user_details for just the caller's own groups) rather than guessing.
 
 Optionally, on the start call, pass relationships — an array of { toId, type, note? } — to link this new artifact to ones that already exist: type is one of supersedes (this replaces an older version) | derived_from (this is a compiled/rendered/post-processed output of the source at toId) | related_to (anything else worth navigating between). toId must be an artifact you can currently view — use list_artifacts/list_shared_with_me to find it first, don't guess an id. Omit relationships entirely if there's no clear connection. This is optional enrichment, not required for a successful publish: a bad toId is reported back per-entry, it never fails the publish itself. Use link_artifacts instead when the relationship only becomes clear after both artifacts already exist.
 
-Result is metadata-only JSON, never file bytes: on the start call, { artifactId, resourceUri, uploadUrl, bytesRef, relationshipResults? }; on the finish call, { artifactId, resourceUri }. Once published, read the file back via the artifact://<id> resource, never from this tool.
+Result is metadata-only JSON, never file bytes: on the start call, { artifactId, resourceUri, uploadUrl, webUploadUrl, bytesRef, relationshipResults? }; on the finish call, { artifactId, resourceUri }. Once published, read the file back via the artifact://<id> resource, never from this tool.
 
 Example (start): publish_artifact({ title: "Q3 architecture diagram", fileName: "q3-arch.mmd", contentType: "text/x-mermaid", audience: { type: "user_groups", groupNames: ["engineering"] }, expiry: "30d", relationships: [{ toId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "derived_from", note: "rendered PNG of this diagram" }] }). Example (finish): publish_artifact({ bytesRef: "<artifactId from the start call>" }).`;
 
@@ -343,15 +343,21 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
         ? ` Linked ${relationshipResults.filter((r) => r.ok).length}/${relationshipResults.length} relationship(s)${relationshipResults.some((r) => !r.ok) ? " — see relationshipResults for any skipped" : ""}.`
         : "";
 
+      // Browser fallback for hosts whose model has no HTTP tool (decision #47) — an id-only
+      // locator, no secret: the completion page re-mints its own presigned URL behind session
+      // auth + an ownership check, so this link is safe to sit in a chat transcript.
+      const webUploadUrl = new URL(`/artifacts/${artifact.id}/complete-upload`, getEnv().APP_ORIGIN).toString();
+
       return toolJson(
         {
           artifactId: artifact.id,
           resourceUri: `artifact://${artifact.id}`,
           uploadUrl,
+          webUploadUrl,
           bytesRef: artifact.id,
           ...(relationshipResults.length ? { relationshipResults } : {}),
         },
-        `Created pending artifact ${artifact.id}.${relationshipNote} PUT the file to uploadUrl, then call publish_artifact again with bytesRef="${artifact.id}" to finish.`,
+        `Created pending artifact ${artifact.id}.${relationshipNote} If you can make HTTP requests, PUT the file to uploadUrl now, then call publish_artifact again with bytesRef="${artifact.id}" to finish. If you cannot, give the user this link to finish the upload in their browser instead: ${webUploadUrl}`,
       );
     }),
   );
@@ -628,11 +634,16 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
       // narrow into non-access (03 §4).
       const expiresAt = computeExpiresAt(args.expiry, artifact.createdAt);
 
-      const newAccessOutboxEvents = await buildNewAccessOutboxEvents(
-        { id: artifact.id, ownerId: artifact.ownerId },
-        before,
-        { audienceType: resolved.audienceType, allowedUserIds: resolved.allowedUserIds, allowedGroupIds: resolved.allowedGroupIds },
-      );
+      // Drafts (sizeBytes === 0, decision #47) don't email on policy edits — finalizeArtifact
+      // notifies the full audience as it stands at finalize. Matches the REST route.
+      const newAccessOutboxEvents =
+        artifact.sizeBytes > BigInt(0)
+          ? await buildNewAccessOutboxEvents(
+              { id: artifact.id, ownerId: artifact.ownerId },
+              before,
+              { audienceType: resolved.audienceType, allowedUserIds: resolved.allowedUserIds, allowedGroupIds: resolved.allowedGroupIds },
+            )
+          : [];
 
       await updateArtifactPolicy(
         artifact.id,
@@ -681,10 +692,14 @@ export function registerArtifactTools(server: McpServer, viewer: AuthenticatedVi
         return toolError("Only the owner can revoke this artifact's access.");
       }
 
-      const outboxEvents = await buildAccessRevokedOutboxEvents(
-        { id: artifact.id, ownerId: artifact.ownerId },
-        toPolicy(artifact),
-      );
+      // Drafts don't email on revoke (decision #47) — no publish notification ever went out.
+      const outboxEvents =
+        artifact.sizeBytes > BigInt(0)
+          ? await buildAccessRevokedOutboxEvents(
+              { id: artifact.id, ownerId: artifact.ownerId },
+              toPolicy(artifact),
+            )
+          : [];
       await revokeArtifactAccess(artifact.id, viewer.id, outboxEvents);
       await recordAdminAuditLog({
         actorId: viewer.id,

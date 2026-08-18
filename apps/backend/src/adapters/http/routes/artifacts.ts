@@ -19,6 +19,7 @@ import {
   DownloadUrlResponse,
   FinalizeArtifactInput,
   MAX_ARTIFACT_SIZE_BYTES,
+  ReissueUploadUrlResponse,
   ShareLinkView,
   TriggerEnrichmentResponse,
 } from "contracts";
@@ -33,6 +34,7 @@ import {
   getArtifactFacets,
   listOwnedArtifacts,
   listSharedWithMe,
+  reissueUploadUrl,
   resolveAudienceInput,
   revokeArtifactAccess,
   toDetail,
@@ -303,6 +305,39 @@ export function createArtifactsRouter(): Router {
     res.json(ArtifactDetail.parse(toDetail(result.artifact, viewer, new Date())));
   });
 
+  // POST /api/artifacts/:id/upload-url — re-mints a fresh presigned PUT for a still-pending
+  // artifact (decision #47). Backs the browser completion page reached via the MCP
+  // publish_artifact tool's webUploadUrl (or a resumed abandoned SPA upload): the id-only page
+  // URL carries no secret, so this route's ownership check is the actual gate — the link
+  // locates, session auth + ownership decide (03 §5's share-link principle applied to writes).
+  router.post("/:id/upload-url", async (req, res) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) {
+      sendError(res, 400, "bad_request", "Invalid artifact id");
+      return;
+    }
+
+    const viewer = req.viewer!;
+    const result = await reissueUploadUrl(params.data.id, viewer.id);
+
+    if (!result.ok) {
+      if (result.reason === "not_found") {
+        sendError(res, 404, "not_found", "Artifact not found");
+        return;
+      }
+      if (result.reason === "forbidden") {
+        sendError(res, 403, "forbidden", "You do not own this artifact");
+        return;
+      }
+      // "already_finalized" — nothing left to resume; the artifact is fully published.
+      sendError(res, 409, "conflict", "This artifact has already finished uploading");
+      return;
+    }
+
+    req.log.info({ userId: viewer.id, artifactId: params.data.id }, "artifact.upload_url.reissue");
+    res.json(ReissueUploadUrlResponse.parse({ uploadUrl: result.uploadUrl }));
+  });
+
   // GET /api/artifacts/:id/comments — gated by canView; no AccessEvent (only :id and
   // .../download write one — docs/architecture/06 §2).
   router.get("/:id/comments", async (req, res) => {
@@ -405,11 +440,16 @@ export function createArtifactsRouter(): Router {
     // narrow a policy into non-access (03 §4), same as picking a past expiry always was.
     const expiresAt = computeExpiresAt(body.data.expiry, artifact.createdAt);
 
-    const newAccessOutboxEvents = await buildNewAccessOutboxEvents(
-      { id: artifact.id, ownerId: artifact.ownerId },
-      before,
-      { audienceType: resolved.audienceType, allowedUserIds: resolved.allowedUserIds, allowedGroupIds: resolved.allowedGroupIds },
-    );
+    // Drafts (sizeBytes === 0, decision #47) don't email on policy edits — nobody can see the
+    // artifact yet, and finalizeArtifact notifies the full audience as it stands at finalize.
+    const newAccessOutboxEvents =
+      artifact.sizeBytes > BigInt(0)
+        ? await buildNewAccessOutboxEvents(
+            { id: artifact.id, ownerId: artifact.ownerId },
+            before,
+            { audienceType: resolved.audienceType, allowedUserIds: resolved.allowedUserIds, allowedGroupIds: resolved.allowedGroupIds },
+          )
+        : [];
 
     await updateArtifactPolicy(
       artifact.id,
@@ -470,10 +510,15 @@ export function createArtifactsRouter(): Router {
       return;
     }
 
-    const outboxEvents = await buildAccessRevokedOutboxEvents(
-      { id: artifact.id, ownerId: artifact.ownerId },
-      toPolicy(artifact),
-    );
+    // Drafts don't email on revoke (decision #47) — no publish notification ever went out, so
+    // there's no granted access to walk back in anyone's inbox.
+    const outboxEvents =
+      artifact.sizeBytes > BigInt(0)
+        ? await buildAccessRevokedOutboxEvents(
+            { id: artifact.id, ownerId: artifact.ownerId },
+            toPolicy(artifact),
+          )
+        : [];
     await revokeArtifactAccess(artifact.id, viewer.id, outboxEvents);
 
     await recordAdminAuditLog({

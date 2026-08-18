@@ -143,3 +143,5 @@ Artifacts also are filterable but we cannot persist organised collections. It wo
 I would optimise the object storage to have true file size limits, policies on object storage levels, true hard-delete capability, warnings when total storage thresholds are being approached or exceeded.
 
 I would use SES or equivalent enqueueing service in order to truly decouple the backend process from the sending of emails.
+
+I would setup much more in the way of observability such as LangSmith for agent observability, far more granular, tagged backend logs, Sentry.io for error reporting, PostHog for frontend analytics.

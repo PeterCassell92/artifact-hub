@@ -84,6 +84,15 @@ export const FinalizeArtifactInput = z.object({
 });
 export type FinalizeArtifactInput = z.infer<typeof FinalizeArtifactInput>;
 
+/** POST /api/artifacts/:id/upload-url response — a freshly-minted presigned PUT for a still-
+ * pending artifact's already-fixed storageKey/contentType. Exists because the uploadUrl from
+ * POST /api/artifacts (or the MCP publish_artifact start call) lives ~5 minutes, which a
+ * chat→browser round trip through the completion page commonly exceeds (01 decision #47). */
+export const ReissueUploadUrlResponse = z.object({
+  uploadUrl: z.string().url(),
+});
+export type ReissueUploadUrlResponse = z.infer<typeof ReissueUploadUrlResponse>;
+
 /** Row shape for lists (My Artifacts / Shared With Me / MCP tables). */
 export const ArtifactSummary = z.object({
   id: z.string().uuid(),

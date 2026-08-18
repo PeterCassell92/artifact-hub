@@ -22,6 +22,7 @@ import type {
   InvitationPreview,
   InvitationView,
   PublicUserView,
+  ReissueUploadUrlResponse,
   ShareLinkView,
   TriggerEnrichmentResponse,
   UserView,
@@ -203,7 +204,18 @@ export const api = createApi({
         method: "POST",
         body: checksumSha256 ? { checksumSha256 } : {},
       }),
-      invalidatesTags: ["ArtifactList"],
+      invalidatesTags: (_result, _error, { artifactId }) => [
+        "ArtifactList",
+        { type: "Artifact", id: artifactId },
+      ],
+    }),
+
+    // Re-mints uploadUrl for a still-pending artifact whose original presigned URL expired
+    // (01 decision #47) — backs CompleteUploadPage, reached via the MCP publish_artifact tool's
+    // webUploadUrl (or resuming an abandoned upload). A `mutation` for the same reason as
+    // resolveDownloadUrl: the URL is short-lived, so caching it would serve an expired one.
+    reissueUploadUrl: builder.mutation<ReissueUploadUrlResponse, string>({
+      query: (artifactId) => ({ url: `/artifacts/${artifactId}/upload-url`, method: "POST" }),
     }),
 
     createShareLink: builder.mutation<ShareLinkView, string>({
@@ -295,6 +307,7 @@ export const {
   useRevokeAccessMutation,
   useCreateArtifactMutation,
   useFinalizeArtifactMutation,
+  useReissueUploadUrlMutation,
   useCreateShareLinkMutation,
   useResolveDownloadUrlMutation,
   useGetUsersQuery,

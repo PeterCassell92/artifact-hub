@@ -19,9 +19,12 @@ export interface ArtifactPolicy {
   // Owner-initiated instant cutoff — independent of expiresAt, so a naturally elapsed bucketed
   // expiry ("expired") stays distinguishable from an explicit "Revoke all access" ("revoked").
   revoked: boolean;
+  // Draft whose bytes haven't landed yet (sizeBytes === 0, decision #47): metadata and policy
+  // exist but there is nothing to view, so everyone except the owner is denied until finalize.
+  pending: boolean;
 }
 
-export type DenyReason = "disabled" | "expired" | "not_in_audience" | "revoked";
+export type DenyReason = "disabled" | "expired" | "not_in_audience" | "revoked" | "pending";
 
 export interface Decision {
   allowed: boolean;
@@ -43,6 +46,10 @@ export function canView(
   // Owner always retains access — even after expiry or an explicit revoke ("My Artifacts"),
   // since they need to be able to see the artifact to re-open it.
   if (viewer.id === policy.ownerId) return ALLOW;
+
+  // Drafts (decision #47) are owner-only until the bytes land: the audience is chosen at create
+  // time but only takes effect at finalize, alongside the publish notifications.
+  if (policy.pending) return deny("pending");
 
   if (policy.revoked) return deny("revoked");
 

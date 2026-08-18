@@ -18,6 +18,7 @@ const policy = (over: Partial<ArtifactPolicy> = {}): ArtifactPolicy => ({
   allowedUserIds: [],
   allowedGroupIds: [],
   revoked: false,
+  pending: false,
   ...over,
 });
 
@@ -73,6 +74,16 @@ describe("canView", () => {
   it("still lets the owner in once revoked — they need access to re-open it", () => {
     const owner = activeViewer({ id: "u-owner" });
     expect(canView(owner, policy({ revoked: true }), now).allowed).toBe(true);
+  });
+
+  it("denies a non-owner while pending, even with a valid audience (decision #47)", () => {
+    const p = policy({ audienceType: "public_authenticated", pending: true });
+    expect(canView(activeViewer(), p, now)).toEqual({ allowed: false, reason: "pending" });
+  });
+
+  it("lets the owner see their own pending draft — they need it to finish the upload", () => {
+    const owner = activeViewer({ id: "u-owner" });
+    expect(canView(owner, policy({ pending: true }), now).allowed).toBe(true);
   });
 });
 

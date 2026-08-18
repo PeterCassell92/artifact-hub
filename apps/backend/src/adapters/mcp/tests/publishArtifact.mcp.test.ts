@@ -32,10 +32,18 @@ describe("Agents can publish a new artifact without ever sending its bytes throu
     });
 
     expect(result.isError).toBeFalsy();
-    const payload = textPayload(result) as { artifactId: string; resourceUri: string; uploadUrl: string; bytesRef: string };
+    const payload = textPayload(result) as {
+      artifactId: string;
+      resourceUri: string;
+      uploadUrl: string;
+      webUploadUrl: string;
+      bytesRef: string;
+    };
     expect(payload.resourceUri).toBe(`artifact://${payload.artifactId}`);
     expect(payload.bytesRef).toBe(payload.artifactId);
     expect(payload.uploadUrl).toMatch(/^http/);
+    // Browser fallback for hosts whose model has no HTTP tool (decision #47) — id-only SPA link.
+    expect(new URL(payload.webUploadUrl).pathname).toBe(`/artifacts/${payload.artifactId}/complete-upload`);
 
     const stored = await ctx.prisma.artifact.findUnique({ where: { id: payload.artifactId } });
     expect(stored).toMatchObject({ ownerId: user.id, title: "Test diagram", audienceType: "public_authenticated" });

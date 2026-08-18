@@ -46,6 +46,7 @@ export function toPolicy(artifact: ArtifactWithPolicyJoins): ArtifactPolicy {
     allowedUserIds: artifact.allowedUsers.map((a) => a.userId),
     allowedGroupIds: artifact.allowedGroups.map((a) => a.groupId),
     revoked: artifact.revoked,
+    pending: artifact.sizeBytes === BigInt(0),
   };
 }
 
@@ -198,6 +199,9 @@ function scopeEligibilityWhere(
   return {
     AND: [
       { ownerId: { not: viewerId } },
+      // Drafts (sizeBytes === 0, decision #47) are owner-only until finalize — mirrors
+      // `canView`'s "pending" denial so lists never show what a direct read would deny.
+      { sizeBytes: { gt: 0 } },
       { revoked: false },
       { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
       { OR: audienceClauses },
@@ -505,12 +509,6 @@ export async function createArtifactPending(
   // the presigned upload below, so the object in storage carries the corrected type too.
   const contentType = inferContentType(input.fileName, input.contentType);
 
-  const notificationEvents = await buildPublishNotificationEvents(id, ownerId, {
-    audienceType: input.audienceType,
-    allowedUserIds: input.allowedUserIds,
-    allowedGroupIds: input.allowedGroupIds,
-  });
-
   await prisma.$transaction(async (tx) => {
     await tx.artifact.create({
       data: {
@@ -533,9 +531,9 @@ export async function createArtifactPending(
         allowedGroups: { create: input.allowedGroupIds.map((groupId) => ({ groupId })) },
       },
     });
-    for (const event of notificationEvents) {
-      await enqueueOutboxEvent(event, tx);
-    }
+    // No recipient notifications here — the artifact is a byte-less draft until
+    // `finalizeArtifact`, which is where the audience is notified (decision #47). Emailing at
+    // create time risked recipients clicking through to an artifact whose upload never happened.
   });
 
   if (input.tags?.length) {
@@ -556,6 +554,13 @@ export type FinalizeArtifactResult =
  * (`HeadObject`) before recording size/checksum — a bare `bytesRef` can't fake a finalize. Also
  * rejects (and deletes) anything over `MAX_ARTIFACT_SIZE_BYTES` — the presigned PUT has no size
  * condition, so this is the earliest point the backend actually knows how big the upload was.
+ *
+ * This is the moment the artifact stops being an owner-only draft (decision #47): recipient
+ * notifications go out here (not at create), against the audience as it stands *now* — if the
+ * owner edited the policy between draft and finalize, the current audience is what's notified.
+ * Idempotent: a second call on an already-finalized artifact (e.g. the browser completion page
+ * finished, then the agent replays its habitual bytesRef call) is a clean success that re-runs
+ * nothing — no second enrichment, no duplicate emails.
  */
 export async function finalizeArtifact(
   artifactId: string,
@@ -565,6 +570,7 @@ export async function finalizeArtifact(
   const artifact = await findArtifactForDetail(artifactId);
   if (!artifact) return { ok: false, reason: "not_found" };
   if (artifact.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
+  if (artifact.sizeBytes > BigInt(0)) return { ok: true, artifact };
 
   const head = await headObject(artifact.storageKey);
   if (!head) return { ok: false, reason: "object_missing" };
@@ -574,11 +580,20 @@ export async function finalizeArtifact(
     return { ok: false, reason: "too_large" };
   }
 
+  const notificationEvents = await buildPublishNotificationEvents(artifactId, ownerId, {
+    audienceType: artifact.audienceType,
+    allowedUserIds: artifact.allowedUsers.map((u) => u.userId),
+    allowedGroupIds: artifact.allowedGroups.map((g) => g.groupId),
+  });
+
   await prisma.$transaction(async (tx) => {
     await tx.artifact.update({
       where: { id: artifactId },
       data: { sizeBytes: BigInt(head.sizeBytes), checksumSha256: input.checksumSha256 },
     });
+    for (const event of notificationEvents) {
+      await enqueueOutboxEvent(event, tx);
+    }
     // Automatic AI enrichment (docs/architecture/01 decision #46) — `finalizeArtifact` is the one
     // point both publish paths (MCP `publish_artifact`'s finish call and the HTTP
     // `.../finalize` route) converge on, so this is the single trigger point for both.
@@ -587,6 +602,33 @@ export async function finalizeArtifact(
 
   const updated = await findArtifactForDetail(artifactId);
   return { ok: true, artifact: updated! };
+}
+
+export type ReissueUploadUrlResult =
+  | { ok: true; uploadUrl: string }
+  | { ok: false; reason: "not_found" | "forbidden" | "already_finalized" };
+
+/**
+ * Re-mints a presigned PUT for an existing **pending** artifact's already-fixed `storageKey`
+ * (decision #47) — backs the browser upload-completion page (`/artifacts/:id/complete-upload`)
+ * that finishes a publish whose original presigned URL (~5 min TTL) expired before the user got
+ * from chat to browser. Ownership-gated like `finalizeArtifact`, not `canView`-gated: this mints
+ * write access to storage, not read access to the artifact. "Pending" is the same derived signal
+ * used everywhere else: `sizeBytes === 0`, only ever raised by `finalizeArtifact`.
+ */
+export async function reissueUploadUrl(
+  artifactId: string,
+  ownerId: string,
+): Promise<ReissueUploadUrlResult> {
+  const artifact = await findArtifactForDetail(artifactId);
+  if (!artifact) return { ok: false, reason: "not_found" };
+  if (artifact.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
+  if (artifact.sizeBytes > BigInt(0)) return { ok: false, reason: "already_finalized" };
+
+  const uploadUrl = await getPresignedUploadUrl(artifact.storageKey, {
+    contentType: artifact.contentType,
+  });
+  return { ok: true, uploadUrl };
 }
 
 /**

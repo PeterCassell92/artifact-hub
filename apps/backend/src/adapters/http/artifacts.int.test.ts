@@ -1344,5 +1344,209 @@ describe("GET /api/artifacts*", () => {
         .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
         .expect(404);
     });
+
+    it("is idempotent: a second finalize succeeds without enqueueing a second enrichment job", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const { artifactId, uploadUrl } = await createPending(owner.idpSub as string);
+
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: "the actual bytes",
+        headers: { "Content-Type": "text/plain" },
+      });
+
+      await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      // e.g. the browser completion page finished, then the agent replays its habitual
+      // bytesRef finish call — must read as success, not re-run publish side effects.
+      await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      const enrichJobs = await prisma.outboxEvent
+        .findMany({ where: { type: "artifact.enrich" } })
+        .then((rows) => rows.filter((r) => (r.payload as { artifactId?: string }).artifactId === artifactId));
+      expect(enrichJobs).toHaveLength(1);
+    });
+  });
+
+  // Decision #47: the browser completion path (webUploadUrl) needs a fresh presigned PUT — the
+  // one minted at create expires in ~5 minutes, before a chat→browser round trip completes.
+  describe("POST /api/artifacts/:id/upload-url", () => {
+    async function createPending(idpSub: string, userEmails: string[] = []) {
+      const created = await request(app)
+        .post("/api/artifacts")
+        .set("Authorization", `Bearer ${tokenFor(idpSub)}`)
+        .send({
+          title: "report.pdf",
+          fileName: "report.pdf",
+          contentType: "text/plain",
+          audienceType: "specific_users",
+          userEmails,
+          expiry: "never",
+        })
+        .expect(201);
+      return created.body as { artifactId: string; uploadUrl: string };
+    }
+
+    it("re-mints a presigned PUT that completes the full upload round trip", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const { artifactId } = await createPending(owner.idpSub as string);
+
+      const res = await request(app)
+        .post(`/api/artifacts/${artifactId}/upload-url`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(res.body.uploadUrl).toMatch(/^http/);
+
+      const putRes = await fetch(res.body.uploadUrl, {
+        method: "PUT",
+        body: "bytes via the reissued url",
+        headers: { "Content-Type": "text/plain" },
+      });
+      expect(putRes.ok).toBe(true);
+
+      const finalized = await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+      expect(finalized.body.sizeBytes).toBe(Buffer.byteLength("bytes via the reissued url"));
+    });
+
+    it("403s a non-owner — the id-only page URL carries no permission of its own", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const other = await makeActiveUser(`other-${Math.random()}@test.local`);
+      const { artifactId } = await createPending(owner.idpSub as string);
+
+      await request(app)
+        .post(`/api/artifacts/${artifactId}/upload-url`)
+        .set("Authorization", `Bearer ${tokenFor(other.idpSub as string)}`)
+        .expect(403);
+    });
+
+    it("404s for an unknown artifact id", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+
+      await request(app)
+        .post("/api/artifacts/00000000-0000-0000-0000-000000000000/upload-url")
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(404);
+    });
+
+    it("409s once the artifact has already finished uploading", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const { artifactId, uploadUrl } = await createPending(owner.idpSub as string);
+
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: "the actual bytes",
+        headers: { "Content-Type": "text/plain" },
+      });
+      await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      const res = await request(app)
+        .post(`/api/artifacts/${artifactId}/upload-url`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(409);
+      expect(res.body.error.code).toBe("conflict");
+    });
+  });
+
+  // Decision #47: until the bytes land, an artifact is an owner-only draft — its audience can
+  // neither see it nor gets notified, and the publish emails go out at finalize instead.
+  describe("draft gating until finalize", () => {
+    async function createPendingFor(idpSub: string, userEmails: string[]) {
+      const created = await request(app)
+        .post("/api/artifacts")
+        .set("Authorization", `Bearer ${tokenFor(idpSub)}`)
+        .send({
+          title: "draft.txt",
+          fileName: "draft.txt",
+          contentType: "text/plain",
+          audienceType: "specific_users",
+          userEmails,
+          expiry: "never",
+        })
+        .expect(201);
+      return created.body as { artifactId: string; uploadUrl: string };
+    }
+
+    it("hides a pending artifact from its audience, then reveals it after finalize", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const recipient = await makeActiveUser(`recipient-${Math.random()}@test.local`);
+      const { artifactId, uploadUrl } = await createPendingFor(owner.idpSub as string, [recipient.email]);
+
+      // Pending: direct read denied, absent from shared-with-me — but the owner still sees it.
+      const denied = await request(app)
+        .get(`/api/artifacts/${artifactId}`)
+        .set("Authorization", `Bearer ${tokenFor(recipient.idpSub as string)}`)
+        .expect(403);
+      expect(denied.body.error.details).toMatchObject({ reason: "pending" });
+
+      const sharedBefore = await request(app)
+        .get("/api/artifacts?scope=sharedWithMe")
+        .set("Authorization", `Bearer ${tokenFor(recipient.idpSub as string)}`)
+        .expect(200);
+      expect(sharedBefore.body.items.map((a: { id: string }) => a.id)).not.toContain(artifactId);
+
+      await request(app)
+        .get(`/api/artifacts/${artifactId}`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: "now it exists",
+        headers: { "Content-Type": "text/plain" },
+      });
+      await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      await request(app)
+        .get(`/api/artifacts/${artifactId}`)
+        .set("Authorization", `Bearer ${tokenFor(recipient.idpSub as string)}`)
+        .expect(200);
+
+      const sharedAfter = await request(app)
+        .get("/api/artifacts?scope=sharedWithMe")
+        .set("Authorization", `Bearer ${tokenFor(recipient.idpSub as string)}`)
+        .expect(200);
+      expect(sharedAfter.body.items.map((a: { id: string }) => a.id)).toContain(artifactId);
+    });
+
+    it("enqueues the publish notification at finalize, not at create", async () => {
+      const owner = await makeActiveUser(`owner-${Math.random()}@test.local`);
+      const recipient = await makeActiveUser(`recipient-${Math.random()}@test.local`);
+      const { artifactId, uploadUrl } = await createPendingFor(owner.idpSub as string, [recipient.email]);
+
+      const eventsFor = () =>
+        prisma.outboxEvent
+          .findMany({ where: { type: "artifact.new_access" } })
+          .then((rows) => rows.filter((r) => (r.payload as { artifactId?: string }).artifactId === artifactId));
+
+      expect(await eventsFor()).toHaveLength(0);
+
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: "now it exists",
+        headers: { "Content-Type": "text/plain" },
+      });
+      await request(app)
+        .post(`/api/artifacts/${artifactId}/finalize`)
+        .set("Authorization", `Bearer ${tokenFor(owner.idpSub as string)}`)
+        .expect(200);
+
+      const events = await eventsFor();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload).toMatchObject({ recipientUserId: recipient.id });
+    });
   });
 });

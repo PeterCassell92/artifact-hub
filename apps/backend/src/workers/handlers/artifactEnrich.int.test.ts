@@ -50,9 +50,20 @@ describe("enrichArtifact (artifact.enrich handler)", () => {
     });
   }
 
-  async function makeArtifact(ownerId: string, opts: { contentType?: string; content?: string } = {}) {
+  async function makeArtifact(
+    ownerId: string,
+    opts: { contentType?: string; content?: string; skipUpload?: boolean; sizeBytesOverride?: bigint } = {},
+  ) {
     const storageKey = `artifacts/test-${Math.random()}`;
     const contentType = opts.contentType ?? "text/markdown";
+    // Mirrors finalizeArtifact (database-service/artifacts.ts): sizeBytes moves off the
+    // BigInt(0) draft placeholder once real content exists. A never-finalized (draft) artifact
+    // stays at 0 — that's the `skipUpload` case used to test draft exclusion below.
+    // `sizeBytesOverride` separately models a row that *claims* to be finalized (sizeBytes > 0)
+    // but whose object is actually missing from storage — the production NoSuchKey scenario.
+    const sizeBytes =
+      opts.sizeBytesOverride ??
+      (opts.content !== undefined && !opts.skipUpload ? BigInt(Buffer.byteLength(opts.content, "utf8")) : BigInt(0));
     const artifact = await prisma.artifact.create({
       data: {
         ownerId,
@@ -60,12 +71,12 @@ describe("enrichArtifact (artifact.enrich handler)", () => {
         fileName: "doc.md",
         contentType,
         storageKey,
-        sizeBytes: BigInt(0),
+        sizeBytes,
         audienceType: "specific_users",
       },
     });
 
-    if (opts.content !== undefined) {
+    if (opts.content !== undefined && !opts.skipUpload) {
       const uploadUrl = await getPresignedUploadUrl(storageKey, { contentType });
       const res = await fetch(uploadUrl, { method: "PUT", body: opts.content, headers: { "Content-Type": contentType } });
       if (!res.ok) throw new Error(`test setup: PUT to MinIO failed (${res.status})`);
@@ -233,5 +244,54 @@ describe("enrichArtifact (artifact.enrich handler)", () => {
     expect(finalRun.status).toBe("completed");
     expect(finalRun.conversationSummary).toBeNull();
     expect(finalRun.conversationMessageCount).toBe(2);
+  }, 30_000);
+
+  it("excludes draft (never-finalized, sizeBytes === 0) artifacts from the candidate corpus", async () => {
+    const owner = await makeOwner();
+    const primary = await makeArtifact(owner.id, { content: "# Notes\n\nSome real content." });
+    const draftCandidate = await makeArtifact(owner.id, {
+      content: "Draft content that never finished uploading.",
+      skipUpload: true,
+    });
+    const enrichment = await makeEnrichmentRow(primary.id, owner.id);
+
+    const proposeEnrichment = jest
+      .fn<(input: ProposeEnrichmentInput) => Promise<EnrichmentResult>>()
+      .mockResolvedValue({ summary: "summary", topics: [], tags: [], relationships: [] });
+    const enrichArtifact = makeEnrichArtifact({ proposeEnrichment });
+    await enrichArtifact({ artifactId: primary.id, enrichmentId: enrichment.id });
+
+    expect(proposeEnrichment).toHaveBeenCalledTimes(1);
+    const input = proposeEnrichment.mock.calls[0]?.[0];
+    expect(input?.candidates.map((c) => c.id)).not.toContain(draftCandidate.id);
+  }, 30_000);
+
+  it("treats an unreadable candidate (finalized row, missing object) as unavailable without failing the run", async () => {
+    const owner = await makeOwner();
+    const primary = await makeArtifact(owner.id, { content: "# Notes\n\nSome real content." });
+    // Row claims to be finalized (sizeBytes > 0, so it clears the draft filter) but its object was
+    // never actually uploaded — the exact NoSuchKey shape seen in production.
+    const strandedCandidate = await makeArtifact(owner.id, {
+      content: "content that was never actually uploaded",
+      skipUpload: true,
+      sizeBytesOverride: BigInt(42),
+    });
+    const enrichment = await makeEnrichmentRow(primary.id, owner.id);
+
+    let capturedReadCandidateContent: ProposeEnrichmentInput["readCandidateContent"] | undefined;
+    const proposeEnrichment = jest
+      .fn<(input: ProposeEnrichmentInput) => Promise<EnrichmentResult>>()
+      .mockImplementation(async (input) => {
+        capturedReadCandidateContent = input.readCandidateContent;
+        return { summary: "summary", topics: [], tags: [], relationships: [] };
+      });
+    const enrichArtifact = makeEnrichArtifact({ proposeEnrichment });
+    await enrichArtifact({ artifactId: primary.id, enrichmentId: enrichment.id });
+
+    expect(capturedReadCandidateContent).toBeDefined();
+    await expect(capturedReadCandidateContent?.(strandedCandidate.id)).resolves.toBeNull();
+
+    const finalRun = await prisma.artifactEnrichment.findUniqueOrThrow({ where: { id: enrichment.id } });
+    expect(finalRun.status).toBe("completed");
   }, 30_000);
 });

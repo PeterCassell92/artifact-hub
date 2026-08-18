@@ -10,13 +10,15 @@ import { GetStartedPage } from "./pages/GetStartedPage";
 import { MyArtifactsPage } from "./pages/MyArtifactsPage";
 import { SharedWithMePage } from "./pages/SharedWithMePage";
 import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
+import { CompleteUploadPage } from "./pages/CompleteUploadPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminGroupsPage } from "./pages/AdminGroupsPage";
 
 /** Route map per docs/frontend/01 §2. Publishing is available both via an agent (MCP
  * publish_artifact) and the Dashboard's Publish New Artifact modal — no dedicated /publish
- * route either way. */
+ * route either way; /artifacts/:id/complete-upload only *finishes* an already-started publish
+ * (the MCP tool's webUploadUrl, 01 decision #47), it doesn't start one. */
 export default function App() {
   return (
     <Routes>
@@ -32,6 +34,7 @@ export default function App() {
           <Route path="/artifacts" element={<MyArtifactsPage />} />
           <Route path="/shared" element={<SharedWithMePage />} />
           <Route path="/artifacts/:id" element={<ArtifactDetailPage />} />
+          <Route path="/artifacts/:id/complete-upload" element={<CompleteUploadPage />} />
 
           <Route element={<AdminRoute />}>
             <Route element={<AdminPage />}>
