@@ -23,6 +23,11 @@ function getClient(): S3Client {
       endpoint: env.AWS_ENDPOINT_URL_S3,
       region: env.AWS_REGION,
       forcePathStyle: true,
+      // Since SDK v3.729.0 the default (WHEN_SUPPORTED) signs an x-amz-checksum-crc32 of the
+      // empty presign-time body into presigned PUT URLs, so real uploads fail validation.
+      // WHEN_REQUIRED restores checksums only where an operation mandates them.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
   }
   return client;
